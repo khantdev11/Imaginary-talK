@@ -167,7 +167,7 @@ export default function ChatRoom({ currentUser }) {
             username: generatedUsername,
             unique_id: randId,
             avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150',
-            biography: 'Hello! I am using ThuTalk.',
+            biography: 'Hello! I am using Imaginary talK.',
             birthday: '2000-01-01',
             privacy_bio: 'public',
             privacy_profile: 'public',
@@ -747,7 +747,7 @@ export default function ChatRoom({ currentUser }) {
           <div style={{ width: '380px', height: '100%', borderRight: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', background: theme.card }}>
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', borderBottom: `1px solid ${theme.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '24px', fontWeight: '800', color: theme.accent, letterSpacing: '-0.5px' }}>ThuTalk</span>
+                <span style={{ fontSize: '24px', fontWeight: '800', color: theme.accent, letterSpacing: '-0.5px' }}>Imaginary talK</span>
                 <div style={{ display: 'flex', gap: '14px', color: theme.subText }}>
                   <FontAwesomeIcon icon={faHome} title="Chats" style={{ cursor: 'pointer', color: currentTab === 'chats' ? theme.accent : '' }} onClick={() => setCurrentTab('chats')} />
                   <FontAwesomeIcon icon={faSearch} title="Search Node" style={{ cursor: 'pointer', color: currentTab === 'search' ? theme.accent : '' }} onClick={() => setCurrentTab('search')} />
@@ -953,7 +953,7 @@ export default function ChatRoom({ currentUser }) {
                   <div style={{ background: theme.background, padding: '14px', borderRadius: '14px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px', lineHeight: '1.5' }}>
                     <div>
                       <strong style={{ color: theme.text }}>Real-time Synchronizer System</strong>
-                      <p style={{ margin: '2px 0 0 0', color: theme.subText }}>ThuTalk updates pipelines recursively across high-fidelity WebSocket streams mapped inside Supabase channel protocols. All message state drops execute across endpoints directly.</p>
+                      <p style={{ margin: '2px 0 0 0', color: theme.subText }}>Imaginary talK updates pipelines recursively across high-fidelity WebSocket streams mapped inside Supabase channel protocols. All message state drops execute across endpoints directly.</p>
                     </div>
                     <div>
                       <strong style={{ color: theme.text }}>Account Purge Mechanics</strong>
@@ -1117,7 +1117,7 @@ export default function ChatRoom({ currentUser }) {
           <div style={{ flex: 1, overflowY: 'auto', width: '100%', height: 'calc(100% - 70px)' }}>
             {!activeRoomId && currentTab === 'chats' && (
               <div style={{ padding: '16px 20px' }}>
-                <span style={{ fontSize: '24px', fontWeight: '900', display: 'block', marginBottom: '16px', color: theme.accent }}>ThuTalk</span>
+                <span style={{ fontSize: '24px', fontWeight: '900', display: 'block', marginBottom: '16px', color: theme.accent }}>Imaginary talK</span>
                 <div style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: theme.subText, padding: '8px 4px' }}>Accounts (Directs)</div>
                 {renderRoomListItems(personalRooms)}
                 <div style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: theme.subText, padding: '16px 4px 8px 4px' }}>Groups Channel List</div>

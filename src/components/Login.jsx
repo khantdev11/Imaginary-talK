@@ -90,7 +90,7 @@ export default function Login() {
         </div>
 
         <h2 style={{ color: '#ffffff', margin: '0 0 8px 0', fontSize: '24px', fontWeight: '700', letterSpacing: '-0.5px' }}>
-          {isSignUpMode ? 'Create Account' : 'Welcome to ThuTalk'}
+          {isSignUpMode ? 'Create Account' : 'Welcome to Imaginary talK'}
         </h2>
         <p style={{ color: '#8e8e93', margin: '0 0 32px 0', fontSize: '14px', fontWeight: '400' }}>
           {isSignUpMode ? 'Sign up to start chatting' : 'Sign in securely'}
