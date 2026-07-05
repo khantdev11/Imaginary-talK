@@ -207,6 +207,42 @@ export default function ChatRoom({ currentUser }) {
         return;
       }
 
+      // Firebase messaging ခွင့်ပြုချက်တောင်းပြီး Supabase မှာ သိမ်းမည့် function
+export const requestNotificationPermission = async (userId) => {
+  if (!userId) {
+    console.error("User ID is missing.");
+    return;
+  }
+
+  try {
+    // 1. Browser Notification ခွင့်ပြုချက်တောင်းခြင်း
+    const permission = await Notification.requestPermission();
+    
+    if (permission === 'granted') {
+      // 2. Firebase Messaging မှ Token ထုတ်ယူခြင်း
+      // VAPID_KEY နေရာတွင် မင်းရဲ့ Firebase Project Settings > Cloud Messaging > Web Push Certificates ထဲက Key ကို ထည့်ပါ
+      const token = await getToken(messaging, { 
+        vapidKey: 'BM7DFrbO5Y4a_lQK__W3BW9WiXVG1MMq5WT-WoYo-h3x24_j75wLH7PPQeZAnSJ1oGw-bgp2vZEb0Mx82gk3chg' 
+      });
+      
+      if (token) {
+        // 3. ရလာတဲ့ Token ကို Supabase Profiles table ထဲသို့ Update လုပ်ခြင်း
+        const { error } = await supabase
+          .from('profiles')
+          .update({ fcm_token: token })
+          .eq('id', userId);
+          
+        if (error) throw error;
+        console.log("FCM Notification token saved to Supabase!");
+      }
+    } else {
+      console.warn("Notification permission denied by user.");
+    }
+  } catch (error) {
+    console.error("Notification initialization error:", error);
+  }
+};
+
       const roomIds = memberships.map(m => m.room_id);
       const { data: roomsData, error: roomsError } = await supabase
         .from('chat_rooms')

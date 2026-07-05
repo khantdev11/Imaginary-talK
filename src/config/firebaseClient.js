@@ -14,18 +14,28 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const messaging = getMessaging(app);
 
-// Notification ခွင့်ပြုချက်တောင်းပြီး Token ကို Supabase ထဲသိမ်းမယ့် Function
 export const requestNotificationPermission = async (userId) => {
+  if (!userId) {
+    console.error("User ID is missing.");
+    return;
+  }
+
   try {
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
-      const token = await getToken(messaging, { vapidKey: 'YOUR_VAPID_KEY' });
+      const token = await getToken(messaging, { 
+        vapidKey: 'BM7DFrbO5Y4a_lQK__W3BW9WiXVG1MMq5WT-WoYo-h3x24_j75wLH7PPQeZAnSJ1oGw-bgp2vZEb0Mx82gk3chg' 
+      });
       
-      // Token ကို Supabase User Profile ထဲသွားသိမ်းမယ်
-      await supabase.from('profiles').update({ fcm_token: token }).eq('id', userId);
-      console.log("Notification token saved!");
+      if (token) {
+        await supabase
+          .from('profiles')
+          .update({ fcm_token: token })
+          .eq('id', userId);
+        console.log("FCM Notification token saved to Supabase!");
+      }
     }
   } catch (error) {
-    console.error("Notification error:", error);
+    console.error("Notification initialization error:", error);
   }
 };

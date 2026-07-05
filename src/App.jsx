@@ -3,13 +3,15 @@ import { supabase } from './config/supabaseClient';
 import Login from './components/Login';
 import ChatRoom from './components/ChatRoom';
 import { motion, AnimatePresence } from 'framer-motion';
+// Firebase messaging ခေါ်သုံးရန်
+import { requestNotificationPermission } from './config/firebaseClient';
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // True Full Screen Layout System Dynamic Injection
+    // 1. CSS Injections for Full Screen Layout
     const styleTag = document.createElement("style");
     styleTag.innerHTML = `
       html, body, #root {
@@ -22,41 +24,37 @@ function App() {
         user-select: none;
         -webkit-tap-highlight-color: transparent;
       }
-      ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
-      }
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.12);
-        border-radius: 10px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.25);
-      }
+      @keyframes thu-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     `;
     document.head.appendChild(styleTag);
 
-    // Synchronize Core Active Session
+    // 2. Authentication Session Sync
     const checkActiveSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        setUser(session?.user ?? null);
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        
+        // Login ဝင်ထားပြီးသားဆိုရင် Notification Permission ချက်ချင်းတောင်းမည်
+        if (currentUser) {
+          requestNotificationPermission(currentUser.id);
+        }
       } catch (error) {
-        console.error("Authentication handshake drop:", error);
+        console.error("Auth sync error:", error);
       } finally {
-        // App loading delay optimize
-        setTimeout(() => setLoading(false), 400);
+        setLoading(false);
       }
     };
 
     checkActiveSession();
 
-    // Live Subscription Listening State to Handle Logins/Logouts Autonomously
+    // 3. Auth Listener for Real-time state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      const newUser = session?.user ?? null;
+      setUser(newUser);
+      if (newUser) {
+        requestNotificationPermission(newUser.id);
+      }
       setLoading(false);
     });
 
@@ -79,73 +77,50 @@ function App() {
     }}>
       <AnimatePresence mode="wait">
         {loading ? (
-          /* 🔄 PREMIUM MICRO-ANIMATION FLUID LOADING SCREEN */
+          /* 🔄 FLUID LOADING ANIMATION */
           <motion.div 
-            key="loading-screen"
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            key="loading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             style={{ 
-              display: 'flex', 
-              flexDirection: 'column',
-              justifyContent: 'center', 
-              alignItems: 'center', 
-              height: '100vh', 
-              width: '100vw',
-              background: '#000000',
-              gap: '20px',
-              position: 'absolute',
-              zIndex: 9999
+              display: 'flex', flexDirection: 'column',
+              justifyContent: 'center', alignItems: 'center', 
+              height: '100vh', width: '100vw',
+              background: '#000000', gap: '20px',
+              position: 'absolute', zIndex: 9999
             }}
           >
-            {/* Smooth Spring Accelerated Loading Spinner */}
             <motion.div 
               animate={{ rotate: 360 }}
               transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}
               style={{
-                width: '36px',
-                height: '36px',
+                width: '36px', height: '36px',
                 border: '3.5px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '3.5px solid #007aff', // Premium iOS Active Blue Accent
+                borderTop: '3.5px solid #007aff',
                 borderRadius: '50%'
               }}
             />
-            
-            <motion.h3 
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1, duration: 0.3 }}
-              style={{ 
-                fontSize: '13.5px', 
-                fontWeight: '600', 
-                letterSpacing: '-0.1px', 
-                color: '#8e8e93',
-                margin: 0
-              }}
-            >
-              Connecting to ThuTalk Secure Channel...
-            </motion.h3>
+            <h3 style={{ fontSize: '13px', color: '#8e8e93', margin: 0 }}>Connecting Secure Channel...</h3>
           </motion.div>
         ) : user ? (
-          /* 📱 CHATROOM CONTAINER VIEWSPACE */
+          /* 📱 CHATROOM SCREEN */
           <motion.div 
-            key="chatroom-view"
+            key="chat"
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
-            transition={{ duration: 0.35, ease: [0.25, 1, 0.5, 1] }}
             style={{ width: '100%', height: '100%' }}
           >
             <ChatRoom currentUser={user} />
           </motion.div>
         ) : (
-          /* 🔐 AUTHENTICATION GATEWAY GATEWAY */
+          /* 🔐 LOGIN SCREEN */
           <motion.div 
-            key="login-view"
-            initial={{ opacity: 0, y: 15 }}
+            key="login"
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
+            exit={{ opacity: 0, y: -10 }}
             style={{ width: '100%', height: '100%' }}
           >
             <Login />
