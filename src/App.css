@@ -1,0 +1,157 @@
+/* Modern Reset & Design Tokens */
+:root {
+  --transition-smooth: 0.3s cubic-bezier(0.2, 0, 0, 1);
+  --border-radius-pill: 50px;
+  --border-radius-card: 20px;
+  /* Using clamp() for fluid typography/spacing if needed in parent */
+}
+
+.counter {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: var(--border-radius-pill);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid transparent;
+  transition: var(--transition-smooth);
+  margin-bottom: 24px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+
+  &:hover {
+    background: var(--accent);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 122, 255, 0.3);
+  }
+}
+
+.hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 1500px; /* Wider perspective for more depth */
+  padding: 40px 0;
+
+  .base, .framework, .vite {
+    inset-inline: 0;
+    margin: 0 auto;
+    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .base {
+    width: 180px;
+    filter: drop-shadow(0 20px 30px rgba(0, 0, 0, 0.1));
+  }
+
+  .framework, .vite {
+    position: absolute;
+    transform-style: preserve-3d;
+  }
+
+  .framework {
+    z-index: 2;
+    top: 20px;
+    height: 32px;
+    transform: rotateZ(300deg) rotateX(44deg) rotateY(39deg) scale(1.5);
+  }
+
+  .vite {
+    z-index: 1;
+    top: 90px;
+    height: 30px;
+    transform: rotateZ(300deg) rotateX(40deg) rotateY(39deg) scale(0.9);
+  }
+
+  /* Smooth 3D parallax on hover */
+  &:hover {
+    .framework { transform: rotateZ(300deg) rotateX(40deg) rotateY(30deg) scale(1.6) translateY(-10px); }
+    .vite { transform: rotateZ(300deg) rotateX(35deg) rotateY(30deg) scale(1.0) translateY(10px); }
+  }
+}
+
+#center {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+#next-steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--border);
+  gap: 1px;
+  background-color: var(--border); /* Creates grid lines */
+
+  & > div {
+    padding: 48px;
+    background: var(--card-bg, #ffffff);
+    transition: background 0.3s ease;
+  }
+
+  @media (max-width: 1024px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+#docs {
+  border-right: 1px solid var(--border);
+}
+
+#next-steps ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  gap: 12px;
+  margin: 24px 0 0;
+
+  a {
+    color: var(--text-h);
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 12px;
+    background: var(--social-bg);
+    border: 1px solid var(--border);
+    display: flex;
+    padding: 10px 16px;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    transition: var(--transition-smooth);
+
+    &:hover {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+  }
+}
+
+/* Add subtle animated ticks */
+.ticks {
+  position: relative;
+  width: 100%;
+  height: 2px;
+  background: var(--border);
+
+  &::before, &::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    width: 10px;
+    height: 10px;
+    background: var(--border);
+    border-radius: 50%;
+  }
+  &::before { left: 0; }
+  &::after { right: 0; }
+}
