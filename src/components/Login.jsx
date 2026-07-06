@@ -141,7 +141,7 @@ export default function Login() {
           disabled={loading}
           style={{ width: '100%', marginTop: '20px', padding: '12px', background: 'transparent', color: '#007aff', border: '1px solid #2c2c2e', borderRadius: '14px', cursor: 'pointer', fontWeight: '600', fontSize: '14px' }}
         >
-          {isSignUpMode ? 'Already have an account? Log In' : 'New to ThuTalk? Create Account'}
+          {isSignUpMode ? 'Already have an account? Log In' : 'New to ItalK? Create Account'}
         </button>
       </div>
     </div>

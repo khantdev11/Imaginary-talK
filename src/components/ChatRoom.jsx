@@ -14,7 +14,7 @@ import {
   faCalendarAlt, faAddressCard, faCheck, faShieldAlt, faUserCheck, 
   faQuoteLeft, faCircle, faUserPen, faUserCircle, faHome, faUserGroup, 
   faXmark, faCheckSquare, faTimesCircle, faGlobe, faUserLock,
-  faLink, faUser, faTrashCan, faFileContract, faCircleInfo, faCommentDots, faShieldHalved, faUserGear
+  faLink, faUser, faTrashCan, faFileContract, faCircleInfo, faCommentDots, faShieldHalved, faUserGear, faUnlock
 } from '@fortawesome/free-solid-svg-icons';
 
 // Hash-based Consistent Avatar Random Color System
@@ -30,7 +30,7 @@ export default function ChatRoom({ currentUser }) {
   // Navigation Routing & Screen Contexts
   const [currentTab, setCurrentTab] = useState('chats'); // 'chats' | 'search' | 'create-group' | 'profile-view' | 'edit-profile' | 'settings' | 'privacy' | 'help-support' | 'private-settings'
   const [activeRoomId, setActiveRoomId] = useState(null);
-  const [activeRoomData, setActiveRoomData] = useState(null);
+  const [isViewingInfo, setIsViewingInfo] = useState(false); // ✅ Box မဟုတ်ဘဲ Full Info Page ပြောင်းရန် State
   const [darkMode, setDarkMode] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 840);
 
@@ -53,8 +53,6 @@ export default function ChatRoom({ currentUser }) {
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [isSearchingChat, setIsSearchingChat] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
-  const [viewingUserTarget, setViewingUserTarget] = useState(null);
-  const [viewingGroupMeta, setViewingGroupMeta] = useState(false);
   const [selectedMessages, setSelectedMessages] = useState([]);
   const [isSelectMode, setIsSelectMode] = useState(false);
   
@@ -88,8 +86,14 @@ export default function ChatRoom({ currentUser }) {
 
   // UI Reference Nodes
   const messagesEndRef = useRef(null);
+  const activeRoomIdRef = useRef(activeRoomId);
+  const roomsRef = useRef(rooms);
 
-  // Enhanced Light / Dark Mode Colors Configs (Fixed: Colors fade bug corrected)
+  // Real-time notification synchronization references
+  useEffect(() => { activeRoomIdRef.current = activeRoomId; }, [activeRoomId]);
+  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
+
+  // Enhanced Light / Dark Mode Colors Configs
   const theme = useMemo(() => ({
     bg: darkMode ? '#0c0c0e' : '#f4f5f7',
     card: darkMode ? '#16161a' : '#ffffff',
@@ -128,8 +132,23 @@ export default function ChatRoom({ currentUser }) {
 
     const messageSubscription = supabase
       .channel('public:messages')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
-        if (activeRoomId) fetchMessagesForRoom(activeRoomId);
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const newMsg = payload.new;
+        
+        // 🔔 စာတစ်ယောက်နဲ့တစ်ယောက် ပို့တိုင်း Notification ကျလာမည့် စနစ်
+        if (newMsg.sender_id !== currentUser.id) {
+          const currentRoomContext = roomsRef.current.find(r => r.id === newMsg.room_id);
+          if (currentRoomContext && !currentRoomContext.isMuted) {
+            // လက်ရှိ Chat Screen ဖွင့်မထားရင် In-App banner notification ပြပေးမယ်
+            if (activeRoomIdRef.current !== newMsg.room_id) {
+              showNotification(`New message from ${currentRoomContext.displayName}`, 'success');
+            }
+          }
+        }
+
+        if (activeRoomIdRef.current === newMsg.room_id) {
+          fetchMessagesForRoom(newMsg.room_id);
+        }
         fetchRoomsList();
       })
       .subscribe();
@@ -145,7 +164,7 @@ export default function ChatRoom({ currentUser }) {
       supabase.removeChannel(messageSubscription);
       supabase.removeChannel(roomSubscription);
     };
-  }, [currentUser, activeRoomId]);
+  }, [currentUser]);
 
   const fetchOrCreateProfile = async () => {
     try {
@@ -166,7 +185,7 @@ export default function ChatRoom({ currentUser }) {
             id: currentUser.id,
             username: generatedUsername,
             unique_id: randId,
-            avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150',
+            avatar_url: 'https://img-url1.netlify.app/default',
             biography: 'Hello! I am using Imaginary talK.',
             birthday: '2000-01-01',
             privacy_bio: 'public',
@@ -195,7 +214,6 @@ export default function ChatRoom({ currentUser }) {
     setEditAvatarUrl(profile.avatar_url || '');
   };
 
-  // PGRST200 Relationship Mapping Target fixed to chat_rooms
   const fetchRoomsList = async () => {
     try {
       const { data: memberships, error: memError } = await supabase
@@ -208,7 +226,6 @@ export default function ChatRoom({ currentUser }) {
         setRooms([]);
         return;
       }
-
 
       const roomIds = memberships.map(m => m.room_id);
       const { data: roomsData, error: roomsError } = await supabase
@@ -301,7 +318,7 @@ export default function ChatRoom({ currentUser }) {
     if (!newMessage.trim() || !activeRoomId) return;
 
     if (myMemberStatus === 'banned') {
-      showNotification('You are restricted to text-only viewing.', 'error');
+      showNotification('You have been muted from sending messages in this workspace.', 'error');
       return;
     }
 
@@ -432,7 +449,9 @@ export default function ChatRoom({ currentUser }) {
     }
   };
 
+  // ✅ LEAVE GROUP LOGIC (ခေါ်လိုက်တာနဲ့ Chat List ထဲကပါ ပျောက်သွားစေမည့် စနစ်)
   const executeLeaveRoom = async () => {
+    if (!window.confirm("Are you sure you want to leave this group room?")) return;
     try {
       const { error } = await supabase
         .from('room_members')
@@ -443,8 +462,9 @@ export default function ChatRoom({ currentUser }) {
       if (error) throw error;
       showNotification('Left channel space safely');
       setActiveRoomId(null);
+      setIsViewingInfo(false);
       setRoomHeaderMenuOpen(false);
-      fetchRoomsList();
+      fetchRoomsList(); // Immediately purges from chat list UI
     } catch (err) {
       showNotification('Leave operation error', 'error');
     }
@@ -452,7 +472,6 @@ export default function ChatRoom({ currentUser }) {
 
   const openPersonalChat = async (targetUser) => {
     try {
-      // 1. စကားပြောမည့်သူနှင့် မိမိကြားတွင် အရင်က personal room ရှိဖူးလား စစ်ဆေးခြင်း
       const { data: sharedRooms, error: checkError } = await supabase
         .from('chat_rooms')
         .select('id, type, room_members!inner(user_id)')
@@ -476,13 +495,11 @@ export default function ChatRoom({ currentUser }) {
         }
       }
 
-      // 2. ရှိပြီးသားဆိုလျှင် ထို Room အား Active လုပ်ပြီး Message ဆွဲခေါ်မည်
       if (matchingRoomId) {
         setActiveRoomId(matchingRoomId);
         fetchMessagesForRoom(matchingRoomId);
         setCurrentTab('chats');
       } else {
-        // 3. မရှိသေးလျှင် chat_rooms table ထဲသို့ personal room အသစ် ဆောက်မည်
         const { data: newRoom, error: roomCreateErr } = await supabase
           .from('chat_rooms')
           .insert([{ type: 'personal', name: `Direct: ${targetUser.username}` }])
@@ -491,7 +508,6 @@ export default function ChatRoom({ currentUser }) {
 
         if (roomCreateErr) throw roomCreateErr;
 
-        // room_members ထဲသို့ အဖွဲ့ဝင် (၂) ယောက်လုံးကို သွင်းမည်
         await supabase.from('room_members').insert([
           { room_id: newRoom.id, user_id: currentUser.id, role: 'owner' },
           { room_id: newRoom.id, user_id: targetUser.id, role: 'member' }
@@ -510,11 +526,8 @@ export default function ChatRoom({ currentUser }) {
   const executeDeleteAccount = async () => {
     if (window.confirm("Are you absolutely sure you want to delete your profile? This cannot be undone.")) {
       try {
-        // room_members entries များကို အရင်ဖြုတ်ချခြင်း
         await supabase.from('room_members').delete().eq('user_id', currentUser.id);
-        // profiles ဇယားထဲမှ data ကို purge လုပ်ခြင်း
         await supabase.from('profiles').delete().eq('id', currentUser.id);
-        // auth session အား လုံးဝ အပြီးသတ် ဖျက်သိမ်းခြင်း
         await supabase.auth.signOut();
         showNotification('Account context records destroyed successfully.', 'success');
       } catch (err) {
@@ -523,20 +536,25 @@ export default function ChatRoom({ currentUser }) {
     }
   };
 
+  // ✅ ADMIN TOOLS MANAGER (Kick, Ban, Unban, Promote Admin)
   const manageMemberAction = async (targetUserId, actionType) => {
     try {
       if (actionType === 'kick') {
         const { error } = await supabase.from('room_members').delete().eq('room_id', activeRoomId).eq('user_id', targetUserId);
         if (error) throw error;
-        showNotification('Member dropped');
+        showNotification('Member dropped from group.');
       } else if (actionType === 'admin') {
         const { error } = await supabase.from('room_members').update({ role: 'admin' }).eq('room_id', activeRoomId).eq('user_id', targetUserId);
         if (error) throw error;
-        showNotification('Member promoted to Admin');
+        showNotification('Member promoted to Admin status.');
       } else if (actionType === 'ban_text') {
         const { error } = await supabase.from('room_members').update({ status: 'banned' }).eq('room_id', activeRoomId).eq('user_id', targetUserId);
         if (error) throw error;
-        showNotification('Member status swapped to read-only text ban');
+        showNotification('Member text abilities restricted (Muted).');
+      } else if (actionType === 'unban_text') {
+        const { error } = await supabase.from('room_members').update({ status: 'active' }).eq('room_id', activeRoomId).eq('user_id', targetUserId);
+        if (error) throw error;
+        showNotification('Member text abilities reinstated.');
       }
       fetchMessagesForRoom(activeRoomId);
     } catch (err) {
@@ -613,6 +631,25 @@ export default function ChatRoom({ currentUser }) {
     }
   };
 
+  // ✅ FIXED REFERENCE BUG: `toggleMuteRoom` Top-Level Definition Synchronized
+  const toggleMuteRoom = async () => {
+    try {
+      const { error } = await supabase
+        .from('room_members')
+        .update({ is_muted: !isMuted })
+        .eq('room_id', activeRoomId)
+        .eq('user_id', currentUser.id);
+
+      if (error) throw error;
+      setIsMuted(!isMuted);
+      showNotification(!isMuted ? 'Muted room alerts' : 'Unmuted room alerts');
+      setRoomHeaderMenuOpen(false);
+      fetchRoomsList();
+    } catch (err) {
+      showNotification('Mute toggle error: ' + err.message, 'error');
+    }
+  };
+
   const handleInputTyping = (e) => {
     setNewMessage(e.target.value);
   };
@@ -638,7 +675,7 @@ export default function ChatRoom({ currentUser }) {
       return (
         <div 
           key={room.id}
-          onClick={() => { setActiveRoomId(room.id); fetchMessagesForRoom(room.id); }}
+          onClick={() => { setActiveRoomId(room.id); fetchMessagesForRoom(room.id); setIsViewingInfo(false); }}
           style={{
             display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '14px',
             cursor: 'pointer', background: isSelected ? theme.accentLight : 'transparent',
@@ -669,12 +706,111 @@ export default function ChatRoom({ currentUser }) {
   ];
 
   const currentActiveRoomData = rooms.find(r => r.id === activeRoomId);
+  const targetPersonalProfile = currentActiveRoomData?.type === 'personal' ? currentActiveRoomData.room_members?.find(m => m.user_id !== currentUser.id)?.profiles : null;
   const pinnedMessage = messages.find(m => m.is_pinned);
 
   const filteredMessages = useMemo(() => {
     if (!chatSearchQuery.trim()) return messages;
     return messages.filter(m => m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()));
   }, [messages, chatSearchQuery]);
+
+  // ✅ DEDICATED TELEGRAM/iOS-STYLE INFORMATION/PROFILE PAGE (Replaces standard view when header is tapped)
+  const renderInfoPage = () => {
+    if (!currentActiveRoomData) return null;
+    const isGroup = currentActiveRoomData.type === 'group';
+
+    return (
+      <motion.div initial={{ opacity: 0, x: 15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -15 }} style={{ width: '100%', height: '100%', background: theme.bg, display: 'flex', flexDirection: 'column' }}>
+        {/* Info Header Row */}
+        <div style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', borderBottom: `1px solid ${theme.border}`, background: theme.card }}>
+          <button onClick={() => setIsViewingInfo(false)} style={{ background: 'none', border: 'none', color: theme.accent, fontSize: '15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FontAwesomeIcon icon={faArrowLeft} /> <span style={{ fontWeight: '600' }}>Back to Chatroom</span>
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '30px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
+          {/* Main Round Avatar Display */}
+          <div style={{ width: '110px', height: '110px', borderRadius: '50%', background: getRandomColor(currentActiveRoomData.displayName), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '36px', fontWeight: '800', overflow: 'hidden', boxShadow: theme.shadow }}>
+            {currentActiveRoomData.displayAvatar ? <img src={currentActiveRoomData.displayAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : currentActiveRoomData.displayName?.charAt(0).toUpperCase()}
+          </div>
+
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ margin: '0 0 6px 0', fontSize: '24px', fontWeight: '800', color: theme.text }}>{currentActiveRoomData.displayName}</h2>
+            {!isGroup && targetPersonalProfile && <span style={{ color: theme.accent, fontSize: '14px', fontWeight: '600' }}>Token ID: {targetPersonalProfile.unique_id}</span>}
+            {isGroup && <span style={{ color: theme.subText, fontSize: '13px' }}>Group Broadcast Channel ({roomMembers.length} members)</span>}
+          </div>
+
+          {/* Quick Middleware Action Buttons Grid Row */}
+          <div style={{ display: 'flex', gap: '14px', width: '100%', maxWidth: '400px' }}>
+            <button onClick={() => { setIsViewingInfo(false); setIsSearchingChat(true); }} style={{ flex: 1, padding: '12px', borderRadius: '14px', background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <FontAwesomeIcon icon={faSearch} style={{ color: theme.accent, fontSize: '16px' }} /> <span style={{ fontSize: '11px', fontWeight: '700' }}>Search Log</span>
+            </button>
+            <button onClick={toggleMuteRoom} style={{ flex: 1, padding: '12px', borderRadius: '14px', background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <FontAwesomeIcon icon={isMuted ? faVolumeMute : faVolumeUp} style={{ color: isMuted ? '#ff9500' : theme.accent, fontSize: '16px' }} /> <span style={{ fontSize: '11px', fontWeight: '700' }}>{isMuted ? 'Unmute Alerts' : 'Mute Alerts'}</span>
+            </button>
+            {isGroup && (
+              <button onClick={executeLeaveRoom} style={{ flex: 1, padding: '12px', borderRadius: '14px', background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.2)', color: '#ff3b30', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                <FontAwesomeIcon icon={faSignOutAlt} style={{ fontSize: '16px' }} /> <span style={{ fontSize: '11px', fontWeight: '700' }}>Leave Hub</span>
+              </button>
+            )}
+          </div>
+
+          {/* 👤 DIRECT CHAT: SYSTEM INFO LAYOUT CARD */}
+          {!isGroup && targetPersonalProfile && (
+            <div style={{ width: '100%', maxWidth: '420px', background: theme.card, borderRadius: '18px', border: `1px solid ${theme.border}`, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box' }}>
+              <div>
+                <span style={{ fontSize: '11px', fontWeight: '800', color: theme.subText, letterSpacing: '0.3px' }}>BIOGRAPHY SCHEMA</span>
+                <p style={{ margin: '4px 0 0 0', fontSize: '14.5px', color: theme.text, lineHeight: '1.4' }}>{targetPersonalProfile.privacy_bio === 'public' ? targetPersonalProfile.biography : '🔒 Vault Isolated Matrix Content'}</p>
+              </div>
+              <div style={{ height: '1px', background: theme.border }} />
+              <div>
+                <span style={{ fontSize: '11px', fontWeight: '800', color: theme.subText, letterSpacing: '0.3px' }}>BIRTHDAY STAMP</span>
+                <p style={{ margin: '4px 0 0 0', fontSize: '14.5px', color: theme.text }}><FontAwesomeIcon icon={faCalendarAlt} style={{ marginRight: '6px', opacity: 0.7 }} /> {targetPersonalProfile.privacy_birthday === 'public' ? targetPersonalProfile.birthday : '🔒 Vault Isolated Matrix Content'}</p>
+              </div>
+            </div>
+          )}
+
+          {/* 👥 GROUP CHAT: ADVANCED MEMBERS LIST & ADMIN PRIVILEGES CONTROLS */}
+          {isGroup && (
+            <div style={{ width: '100%', maxWidth: '480px', background: theme.card, borderRadius: '18px', border: `1px solid ${theme.border}`, overflow: 'hidden', boxSizing: 'border-box' }}>
+              <div style={{ padding: '14px 18px', background: theme.bg, borderBottom: `1px solid ${theme.border}`, fontSize: '11px', fontWeight: '800', color: theme.subText, letterSpacing: '0.5px' }}>ROSTER NODE LEDGER MEMBERS ({roomMembers.length})</div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {roomMembers.map(member => (
+                  <div key={member.user_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: `1px solid ${theme.border}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: getRandomColor(member.profiles?.username), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontWeight: '700', fontSize: '13px', overflow: 'hidden' }}>
+                        {member.profiles?.avatar_url ? <img src={member.profiles.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : member.profiles?.username?.charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: '700', fontSize: '14.5px', color: theme.text }}>{member.profiles?.username} {member.user_id === currentUser.id && <span style={{ color: theme.subText, fontWeight:'normal' }}>(You)</span>}</span>
+                        <span style={{ fontSize: '11px', color: member.status === 'banned' ? '#ff9500' : theme.accent, fontWeight: '800', marginTop: '2px' }}>
+                          {member.role?.toUpperCase()} {member.status === 'banned' && '• MUTED (READ-ONLY)'}
+                        </span>
+                      </div>
+                    </div>
+                    {/* Admin Actions Layout buttons */}
+                    {['owner', 'admin'].includes(myRoomRole) && member.user_id !== currentUser.id && (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        {myRoomRole === 'owner' && member.role !== 'admin' && (
+                          <button onClick={() => manageMemberAction(member.user_id, 'admin')} title="Promote to Admin" style={{ background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, padding: '8px 10px', borderRadius: '8px', cursor: 'pointer' }}><FontAwesomeIcon icon={faUserShield} /></button>
+                        )}
+                        {member.status === 'banned' ? (
+                          <button onClick={() => manageMemberAction(member.user_id, 'unban_text')} title="Unmute/Allow Texting" style={{ background: '#34c759', border: 'none', color: '#fff', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer' }}><FontAwesomeIcon icon={faUnlock} /></button>
+                        ) : (
+                          <button onClick={() => manageMemberAction(member.user_id, 'ban_text')} title="Mute text access" style={{ background: '#ff9500', border: 'none', color: '#fff', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer' }}><FontAwesomeIcon icon={faBan} /></button>
+                        )}
+                        <button onClick={() => manageMemberAction(member.user_id, 'kick')} title="Kick Member" style={{ background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.15)', color: '#ff3b30', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer' }}><FontAwesomeIcon icon={faUserMinus} /></button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    );
+  };
 
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', background: theme.bg, color: theme.text, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', overflow: 'hidden', position: 'relative' }}>
@@ -749,18 +885,18 @@ export default function ChatRoom({ currentUser }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '24px', fontWeight: '800', color: theme.accent, letterSpacing: '-0.5px' }}>Imaginary talK</span>
                 <div style={{ display: 'flex', gap: '14px', color: theme.subText }}>
-                  <FontAwesomeIcon icon={faHome} title="Chats" style={{ cursor: 'pointer', color: currentTab === 'chats' ? theme.accent : '' }} onClick={() => setCurrentTab('chats')} />
-                  <FontAwesomeIcon icon={faSearch} title="Search Node" style={{ cursor: 'pointer', color: currentTab === 'search' ? theme.accent : '' }} onClick={() => setCurrentTab('search')} />
-                  <FontAwesomeIcon icon={faFolderPlus} title="Group Deployment" style={{ cursor: 'pointer', color: currentTab === 'create-group' ? theme.accent : '' }} onClick={() => setCurrentTab('create-group')} />
-                  <FontAwesomeIcon icon={faUser} title="My Profile View" style={{ cursor: 'pointer', color: ['profile-view', 'edit-profile'].includes(currentTab) ? theme.accent : '' }} onClick={() => setCurrentTab('profile-view')} />
-                  <FontAwesomeIcon icon={faGear} title="Control Parameters" style={{ cursor: 'pointer', color: ['settings', 'privacy', 'help-support', 'private-settings'].includes(currentTab) ? theme.accent : '' }} onClick={() => setCurrentTab('settings')} />
+                  <FontAwesomeIcon icon={faHome} title="Chats" style={{ cursor: 'pointer', color: currentTab === 'chats' ? theme.accent : '' }} onClick={() => { setCurrentTab('chats'); setActiveRoomId(null); setIsViewingInfo(false); }} />
+                  <FontAwesomeIcon icon={faSearch} title="Search Node" style={{ cursor: 'pointer', color: currentTab === 'search' ? theme.accent : '' }} onClick={() => { setCurrentTab('search'); setActiveRoomId(null); setIsViewingInfo(false); }} />
+                  <FontAwesomeIcon icon={faFolderPlus} title="Group Deployment" style={{ cursor: 'pointer', color: currentTab === 'create-group' ? theme.accent : '' }} onClick={() => { setCurrentTab('create-group'); setActiveRoomId(null); setIsViewingInfo(false); }} />
+                  <FontAwesomeIcon icon={faUser} title="My Profile View" style={{ cursor: 'pointer', color: ['profile-view', 'edit-profile'].includes(currentTab) ? theme.accent : '' }} onClick={() => { setCurrentTab('profile-view'); setActiveRoomId(null); setIsViewingInfo(false); }} />
+                  <FontAwesomeIcon icon={faGear} title="Control Parameters" style={{ cursor: 'pointer', color: ['settings', 'privacy', 'help-support', 'private-settings'].includes(currentTab) ? theme.accent : '' }} onClick={() => { setCurrentTab('settings'); setActiveRoomId(null); setIsViewingInfo(false); }} />
                 </div>
               </div>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
               {currentTab === 'chats' && (
-                <div>
+                <div style={{ padding: '4px 0' }}>
                   <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: theme.subText, padding: '8px 16px', letterSpacing: '0.5px' }}>Accounts (Directs)</div>
                   {renderRoomListItems(personalRooms)}
                   <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: theme.subText, padding: '16px 16px 8px 16px', letterSpacing: '0.5px' }}>Groups Space</div>
@@ -819,7 +955,6 @@ export default function ChatRoom({ currentUser }) {
                 </div>
               )}
 
-              {/* PROFILE VIEW TAB SEPARATED */}
               {currentTab === 'profile-view' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '4px' }}>
                   <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>My Profile</h3>
@@ -847,7 +982,6 @@ export default function ChatRoom({ currentUser }) {
                 </div>
               )}
 
-              {/* EDIT PROFILE TAB GRAPHICS VIEW */}
               {currentTab === 'edit-profile' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: theme.accent }} onClick={() => setCurrentTab('profile-view')}>
@@ -860,12 +994,10 @@ export default function ChatRoom({ currentUser }) {
                       <label style={{ fontSize: '12px', color: theme.subText }}>Display Nickname</label>
                       <input type="text" value={editUsername} onChange={e => setEditUsername(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
                     </div>
-
                     <div>
                       <label style={{ fontSize: '12px', color: theme.subText }}>Unique Identifier ID (Can't Change)</label>
                       <input type="text" value={myProfile.unique_id || ''} disabled style={{ width: '100%', padding: '12px', borderRadius: '10px', border: `1px solid ${theme.border}`, background: theme.border, color: theme.subText, fontSize: '14px', cursor: 'not-allowed', opacity: 0.6, boxSizing: 'border-box' }} />
                     </div>
-
                     <div>
                       <label style={{ fontSize: '12px', color: theme.subText }}>Profile Photo URL Link</label>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -873,27 +1005,25 @@ export default function ChatRoom({ currentUser }) {
                         <button type="button" onClick={() => window.open('https://img-url1.netlify.app', '_blank')} title="Convert Asset URL Link" style={{ width: '40px', height: '40px', background: theme.accentLight, border: `1px solid ${theme.accent}`, color: theme.accent, borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FontAwesomeIcon icon={faLink} /></button>
                       </div>
                     </div>
-
                     <div>
                       <label style={{ fontSize: '12px', color: theme.subText }}>Biography Content</label>
                       <textarea value={editBio} onChange={e => setEditBio(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '10px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '13px', outline: 'none', height: '70px', resize: 'none', boxSizing: 'border-box' }} />
                     </div>
-
                     <div>
                       <label style={{ fontSize: '12px', color: theme.subText }}>Birthday Timestamp</label>
                       <input type="date" value={editBirthday} onChange={e => setEditBirthday(e.target.value)} style={{ padding: '10px', borderRadius: '10px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '14px', boxSizing: 'border-box' }} />
                     </div>
-
                     <button type="submit" style={{ padding: '12px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', marginTop: '4px', fontSize: '14px' }}>Commit Settings Parameters</button>
                   </form>
                 </div>
               )}
 
-              {/* SETTINGS MENU SELECTION BRANCHES */}
               {currentTab === 'settings' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '12px', borderBottom: `1px solid ${theme.border}` }}>
-                    <img src={myProfile.avatar_url} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', border: `2px solid ${theme.accent}` }} />
+                    <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(myProfile.username), display:'flex', justifyContent:'center', alignItems:'center', color:'#fff', fontWeight:'bold' }}>
+                      {myProfile.avatar_url ? <img src={myProfile.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%' }} /> : myProfile.username?.charAt(0).toUpperCase()}
+                    </div>
                     <div>
                       <h4 style={{ margin: 0, fontSize: '15px' }}>{myProfile.username}</h4>
                       <p style={{ margin: 0, fontSize: '11px', color: theme.subText }}>{currentUser.email}</p>
@@ -906,7 +1036,6 @@ export default function ChatRoom({ currentUser }) {
                 </div>
               )}
 
-              {/* PRIVATE SETTINGS MENU LAYOUT */}
               {currentTab === 'private-settings' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: theme.accent, cursor: 'pointer' }} onClick={() => setCurrentTab('settings')}>
@@ -943,7 +1072,6 @@ export default function ChatRoom({ currentUser }) {
                 </div>
               )}
 
-              {/* HELP & SUPPORT DOCUMENTATION SECTION */}
               {currentTab === 'help-support' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: theme.accent, cursor: 'pointer' }} onClick={() => setCurrentTab('settings')}>
@@ -953,11 +1081,7 @@ export default function ChatRoom({ currentUser }) {
                   <div style={{ background: theme.background, padding: '14px', borderRadius: '14px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px', lineHeight: '1.5' }}>
                     <div>
                       <strong style={{ color: theme.text }}>Real-time Synchronizer System</strong>
-                      <p style={{ margin: '2px 0 0 0', color: theme.subText }}>Imaginary talK updates pipelines recursively across high-fidelity WebSocket streams mapped inside Supabase channel protocols. All message state drops execute across endpoints directly.</p>
-                    </div>
-                    <div>
-                      <strong style={{ color: theme.text }}>Account Purge Mechanics</strong>
-                      <p style={{ margin: '2px 0 0 0', color: theme.subText }}>Executing a hard data wipe across chat windows completely purges database records rows without maintaining server cache loops.</p>
+                      <p style={{ margin: '2px 0 0 0', color: theme.subText }}>Imaginary talK updates pipelines recursively across high-fidelity WebSocket streams mapped inside Supabase channel protocols.</p>
                     </div>
                   </div>
                 </div>
@@ -965,140 +1089,143 @@ export default function ChatRoom({ currentUser }) {
             </div>
           </div>
 
-          {/* CHAT VIEW WORKFLOW ENGINE DESKTOP LAYER PANEL */}
+          {/* MAIN COMMUNICATION CHAT VIEW AND PROFILE VIEW SPLIT ENGINE */}
           <div style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', background: theme.bg, position: 'relative' }}>
             {activeRoomId && currentActiveRoomData ? (
-              <>
-                {/* FLOATING GLASS CARD HEADER LAYER CONTROL */}
-                <div style={{ position: 'absolute', top: '16px', left: '20px', right: '20px', height: '70px', border: `1px solid ${theme.border}`, background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', zIndex: 100, boxShadow: theme.shadow }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => { if (currentActiveRoomData.type === 'group') { setViewingGroupMeta(true); } else { const matchNode = currentActiveRoomData.room_members?.find(m => m.user_id !== currentUser.id); if (matchNode) setViewingUserTarget(matchNode.profiles); } }}>
-                    <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(currentActiveRoomData.displayName), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontWeight: '800', fontSize: '15px', overflow:'hidden', flexShrink:0 }}>
-                      {currentActiveRoomData.displayAvatar && currentActiveRoomData.displayAvatar !== "" ? <img src={currentActiveRoomData.displayAvatar} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : currentActiveRoomData.displayName?.charAt(0).toUpperCase()}
+              // ✅ UI Optimization: Box Modal တွေကို ဖျက်ပြီး iOS/Telegram ပုံစံ Full Profile Page အဖြစ် လမ်းကြောင်းလွှဲပေးခြင်း
+              isViewingInfo ? renderInfoPage() : (
+                <>
+                  {/* FLOATING HEADER CARD BLOCK */}
+                  <div style={{ position: 'absolute', top: '16px', left: '20px', right: '20px', height: '70px', border: `1px solid ${theme.border}`, background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', zIndex: 100, boxShadow: theme.shadow }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => setIsViewingInfo(true)}>
+                      <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(currentActiveRoomData.displayName), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontWeight: '800', fontSize: '15px', overflow:'hidden', flexShrink:0 }}>
+                        {currentActiveRoomData.displayAvatar && currentActiveRoomData.displayAvatar !== "" ? <img src={currentActiveRoomData.displayAvatar} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : currentActiveRoomData.displayName?.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: theme.text }}>{currentActiveRoomData.displayName}</h4>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: theme.subText, marginTop: '2px' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><FontAwesomeIcon icon={faCircle} style={{ color: '#34c759', fontSize: '7px' }} /> Online encryption socket</span>
+                          <span>•</span>
+                          <span>Click for layout info</span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: theme.text }}>{currentActiveRoomData.displayName}</h4>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: theme.subText, marginTop: '2px' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><FontAwesomeIcon icon={faCircle} style={{ color: '#34c759', fontSize: '7px' }} /> Online encryption socket</span>
-                        <span>•</span>
-                        <span>{isSearchingChat ? 'filtering...' : 'Active now'}</span>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {isSearchingChat ? (
+                        <div style={{ display: 'flex', alignItems: 'center', background: theme.bg, borderRadius: '8px', padding: '2px 8px', marginRight: '6px', border: `1px solid ${theme.border}` }}>
+                          <input type="text" placeholder="Search node logs..." value={chatSearchQuery} onChange={e => setChatSearchQuery(e.target.value)} style={{ border: 'none', background: 'none', color: theme.text, outline: 'none', fontSize: '12px', width: '120px' }} />
+                          <FontAwesomeIcon icon={faXmark} style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => { setIsSearchingChat(false); setChatSearchQuery(''); }} />
+                        </div>
+                      ) : (
+                        <button onClick={() => setIsSearchingChat(true)} style={{ background: 'none', border: 'none', color: theme.text, fontSize: '16px', cursor: 'pointer', padding: '8px' }}><FontAwesomeIcon icon={faSearch} /></button>
+                      )}
+
+                      <div style={{ position: 'relative' }}>
+                        <button onClick={() => setRoomHeaderMenuOpen(!roomHeaderMenuOpen)} style={{ background: 'none', border: 'none', color: theme.subText, fontSize: '16px', cursor: 'pointer', padding: '8px' }}>
+                          <FontAwesomeIcon icon={faEllipsisVertical} />
+                        </button>
+                        <AnimatePresence>
+                          {roomHeaderMenuOpen && (
+                            <>
+                              <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 990 }} onClick={() => setRoomHeaderMenuOpen(false)} />
+                              <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} style={{ position: 'absolute', right: 0, top: '40px', width: '180px', background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', padding: '4px', zIndex: 999, display: 'flex', flexDirection: 'column' }}>
+                                <button onClick={toggleMuteRoom} style={{ background: 'none', border: 'none', color: theme.text, padding: '10px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width: '100%', textAlign: 'left' }}>
+                                  <FontAwesomeIcon icon={isMuted ? faVolumeUp : faVolumeMute} /> {isMuted ? 'Unmute alerts loop' : 'Silence alerts channel'}
+                                </button>
+                                <button onClick={handleClearChatDatabase} style={{ background: 'none', border: 'none', color: '#ff3b30', padding: '10px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width: '100%', textAlign: 'left' }}>
+                                  <FontAwesomeIcon icon={faTrash} /> Delete Chat History
+                                </button>
+                              </motion.div>
+                            </>
+                          )}
+                        </AnimatePresence>
                       </div>
                     </div>
                   </div>
-                  
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    {isSearchingChat ? (
-                      <div style={{ display: 'flex', alignItems: 'center', background: theme.bg, borderRadius: '8px', padding: '2px 8px', marginRight: '6px', border: `1px solid ${theme.border}` }}>
-                        <input type="text" placeholder="Search node logs..." value={chatSearchQuery} onChange={e => setChatSearchQuery(e.target.value)} style={{ border: 'none', background: 'none', color: theme.text, outline: 'none', fontSize: '12px', width: '120px' }} />
-                        <FontAwesomeIcon icon={faXmark} style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => { setIsSearchingChat(false); setChatSearchQuery(''); }} />
+
+                  {/* FLOATING PINNED COMPONENT BLOCK BANNER */}
+                  {pinnedMessage && (
+                    <div style={{ position: 'absolute', top: '96px', left: '24px', right: '24px', background: theme.card, borderLeft: `4px solid ${theme.accent}`, borderRadius: '8px', padding: '10px 16px', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                        <FontAwesomeIcon icon={faThumbtack} style={{ color: theme.accent, fontSize: '12px' }} />
+                        <p style={{ margin: 0, fontSize: '13px', color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pinnedMessage.content}</p>
                       </div>
-                    ) : (
-                      <button onClick={() => setIsSearchingChat(true)} style={{ background: 'none', border: 'none', color: theme.text, fontSize: '16px', cursor: 'pointer', padding: '8px' }}><FontAwesomeIcon icon={faSearch} /></button>
-                    )}
-
-                    <div style={{ position: 'relative' }}>
-                      <button onClick={() => setRoomHeaderMenuOpen(!roomHeaderMenuOpen)} style={{ background: 'none', border: 'none', color: theme.subText, fontSize: '16px', cursor: 'pointer', padding: '8px' }}>
-                        <FontAwesomeIcon icon={faEllipsisVertical} />
-                      </button>
-                      <AnimatePresence>
-                        {roomHeaderMenuOpen && (
-                          <>
-                            <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 990 }} onClick={() => setRoomHeaderMenuOpen(false)} />
-                            <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} style={{ position: 'absolute', right: 0, top: '40px', width: '180px', background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', padding: '4px', zIndex: 999, display: 'flex', flexDirection: 'column' }}>
-                              <button onClick={toggleMuteRoom} style={{ background: 'none', border: 'none', color: theme.text, padding: '10px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width: '100%', textAlign: 'left' }}>
-                                <FontAwesomeIcon icon={isMuted ? faVolumeUp : faVolumeMute} /> {isMuted ? 'Unmute alerts loop' : 'Silence alerts channel'}
-                              </button>
-                              <button onClick={handleClearChatDatabase} style={{ background: 'none', border: 'none', color: '#ff3b30', padding: '10px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width: '100%', textAlign: 'left' }}>
-                                <FontAwesomeIcon icon={faTrash} /> Delete Chat History
-                              </button>
-                            </motion.div>
-                          </>
-                        )}
-                      </AnimatePresence>
+                      <FontAwesomeIcon icon={faXmark} style={{ cursor: 'pointer', opacity: 0.5, fontSize: '14px' }} onClick={() => togglePinMessage(pinnedMessage)} />
                     </div>
-                  </div>
-                </div>
+                  )}
 
-                {/* FLOATING CHAT ANCESTOR HEAD PINNED NOTIFIER STRIP BAR */}
-                {pinnedMessage && (
-                  <div style={{ position: 'absolute', top: '96px', left: '24px', right: '24px', background: theme.card, borderLeft: `4px solid ${theme.accent}`, borderRadius: '8px', padding: '10px 16px', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                      <FontAwesomeIcon icon={faThumbtack} style={{ color: theme.accent, fontSize: '12px' }} />
-                      <p style={{ margin: 0, fontSize: '13px', color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pinnedMessage.content}</p>
-                    </div>
-                    <FontAwesomeIcon icon={faXmark} style={{ cursor: 'pointer', opacity: 0.5, fontSize: '14px' }} onClick={() => togglePinMessage(pinnedMessage)} />
-                  </div>
-                )}
-
-                {/* Scrollable Message Grid Trace Element Layout */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '105px 24px 100px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  {filteredMessages.map((msg) => {
-                    const isMe = msg.sender_id === currentUser.id;
-                    const isChosen = selectedMessages.includes(msg.id);
-                    const replyParentMsg = msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id) : null;
-                    return (
-                      <div key={msg.id} onContextMenu={(e) => handleMsgContextMenu(e, msg)} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '8px', width: '100%' }}>
-                        {isSelectMode && (
-                          <input type="checkbox" checked={isChosen} onChange={() => {
-                            if (isChosen) setSelectedMessages(prev => prev.filter(id => id !== msg.id));
-                            else setSelectedMessages(prev => [...prev, msg.id]);
-                          }} style={{ width: '18px', height: '18px', marginBottom: '12px', cursor: 'pointer' }} />
-                        )}
-                        <div style={{ display: 'flex', flexDirection: isMe ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: '8px', maxWidth: '70%' }}>
-                          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: getRandomColor(msg.profiles?.username), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontSize: '11px', fontWeight: '700', overflow:'hidden', flexShrink:0 }}>
-                            {msg.profiles?.avatar_url && msg.profiles.avatar_url !== "" ? <img src={msg.profiles.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : msg.profiles?.username?.charAt(0).toUpperCase()}
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
-                            <span style={{ fontSize: '11px', color: theme.subText, marginBottom: '2px', padding: '0 4px' }}>{msg.profiles?.username}</span>
-                            
-                            {replyParentMsg && (
-                              <div style={{ background: theme.card, borderLeft: `3px solid ${theme.accent}`, padding: '6px 10px', borderRadius: '8px 8px 0 0', fontSize: '12px', opacity: 0.8, color: theme.text, marginBottom: '-4px', width: '100%', boxSizing: 'border-box' }}>
-                                <span style={{ ArabianWeight: '700', fontSize: '10px', color: theme.accent }}>Reply chain link context</span>
-                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>{replyParentMsg.content}</span>
-                              </div>
-                            )}
-
-                            <div style={{ padding: '12px 16px', borderRadius: isMe ? (replyParentMsg ? '0 16px 16px 16px' : '24px 24px 6px 24px') : (replyParentMsg ? '16px 0 16px 16px' : '24px 24px 24px 6px'), background: isMe ? theme.bubbleMe : theme.bubbleUser, color: isMe ? theme.textMe : theme.textUser, fontSize: '14px', lineHeight: '1.4', boxShadow: '0 2px 6px rgba(0,0,0,0.05)', position: 'relative', border: isChosen ? '2px solid #fff' : 'none' }}>
-                              {renderMessageContent(msg.content)}
-                              {msg.is_pinned && <FontAwesomeIcon icon={faThumbtack} style={{ position: 'absolute', top: '-6px', right: '-6px', fontSize: '10px', color: theme.accent, background: theme.card, padding: '3px', borderRadius: '50%' }} />}
+                  {/* SCROLLABLE CONVERSATION SCROLLER PACKETS GRID */}
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '105px 24px 100px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {filteredMessages.map((msg) => {
+                      const isMe = msg.sender_id === currentUser.id;
+                      const isChosen = selectedMessages.includes(msg.id);
+                      const replyParentMsg = msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id) : null;
+                      return (
+                        <div key={msg.id} onContextMenu={(e) => handleMsgContextMenu(e, msg)} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '8px', width: '100%' }}>
+                          {isSelectMode && (
+                            <input type="checkbox" checked={isChosen} onChange={() => {
+                              if (isChosen) setSelectedMessages(prev => prev.filter(id => id !== msg.id));
+                              else setSelectedMessages(prev => [...prev, msg.id]);
+                            }} style={{ width: '18px', height: '18px', marginBottom: '12px', cursor: 'pointer' }} />
+                          )}
+                          <div style={{ display: 'flex', flexDirection: isMe ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: '8px', maxWidth: '70%' }}>
+                            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: getRandomColor(msg.profiles?.username), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontSize: '11px', fontWeight: '700', overflow:'hidden', flexShrink:0, cursor:'pointer' }} onClick={() => setIsViewingInfo(true)}>
+                              {msg.profiles?.avatar_url && msg.profiles.avatar_url !== "" ? <img src={msg.profiles.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : msg.profiles?.username?.charAt(0).toUpperCase()}
                             </div>
-                            <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '2px', padding: '0 4px' }}>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
+                              <span style={{ fontSize: '11px', color: theme.subText, marginBottom: '2px', padding: '0 4px', cursor:'pointer' }} onClick={() => setIsViewingInfo(true)}>{msg.profiles?.username}</span>
+                              
+                              {replyParentMsg && (
+                                <div style={{ background: theme.card, borderLeft: `3px solid ${theme.accent}`, padding: '6px 10px', borderRadius: '8px 8px 0 0', fontSize: '12px', opacity: 0.8, color: theme.text, marginBottom: '-4px', width: '100%', boxSizing: 'border-box' }}>
+                                  <span style={{ fontSize: '10px', color: theme.accent, fontWeight:'700', display:'block' }}>Reply message context context</span>
+                                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px', display:'block' }}>{replyParentMsg.content}</span>
+                                </div>
+                              )}
+
+                              <div style={{ padding: '12px 16px', borderRadius: isMe ? (replyParentMsg ? '0 16px 16px 16px' : '24px 24px 6px 24px') : (replyParentMsg ? '16px 0 16px 16px' : '24px 24px 24px 6px'), background: isMe ? theme.bubbleMe : theme.bubbleUser, color: isMe ? theme.textMe : theme.textUser, fontSize: '14px', lineHeight: '1.4', boxShadow: '0 2px 6px rgba(0,0,0,0.05)', position: 'relative', border: isChosen ? '2px solid #fff' : 'none' }}>
+                                {renderMessageContent(msg.content)}
+                                {msg.is_pinned && <FontAwesomeIcon icon={faThumbtack} style={{ position: 'absolute', top: '-6px', right: '-6px', fontSize: '10px', color: theme.accent, background: theme.card, padding: '3px', borderRadius: '50%' }} />}
+                              </div>
+                              <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '2px', padding: '0 4px' }}>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                  <div ref={messagesEndRef} />
-                </div>
+                      );
+                    })}
+                    <div ref={messagesEndRef} />
+                  </div>
 
-                {/* INPUT BAR FLOATING DOCK SEGMENT AT DISPATCH BOTTOM */}
-                <div style={{ position: 'absolute', bottom: '20px', left: '20px', right: '20px', background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '20px', padding: '12px', zIndex: 100, boxShadow: '0 -8px 32px rgba(0,0,0,0.05)' }}>
-                  <AnimatePresence>
-                    {isSelectMode && selectedMessages.length > 0 && (
-                      <div style={{ background: theme.card, padding: '8px 12px', borderRadius: '10px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '13px' }}>Selected Packet Count: {selectedMessages.length}</span>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button onClick={executeBulkDeleteSelected} style={{ background: '#ff3b30', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>Purge Highlighted</button>
-                          <button onClick={() => { setIsSelectMode(false); setSelectedMessages([]); }} style={{ background: 'none', border: `1px solid ${theme.border}`, color: theme.text, padding: '6px 12px', borderRadius: '8px', cursor: 'pointer' }}>Cancel</button>
+                  {/* ATTACHED BOTTOM DISPATCH BAR AREA INPUT INTERFACE CONTROL */}
+                  <div style={{ position: 'absolute', bottom: '20px', left: '20px', right: '20px', background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '20px', padding: '12px', zIndex: 100, boxShadow: '0 -8px 32px rgba(0,0,0,0.05)' }}>
+                    <AnimatePresence>
+                      {isSelectMode && selectedMessages.length > 0 && (
+                        <div style={{ background: theme.card, padding: '8px 12px', borderRadius: '10px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '13px' }}>Selected Packet Count: {selectedMessages.length}</span>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={executeBulkDeleteSelected} style={{ background: '#ff3b30', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>Purge Highlighted</button>
+                            <button onClick={() => { setIsSelectMode(false); setSelectedMessages([]); }} style={{ background: 'none', border: `1px solid ${theme.border}`, color: theme.text, padding: '6px 12px', borderRadius: '8px', cursor: 'pointer' }}>Cancel</button>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {replyTarget && (
-                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.bg, padding: '8px 12px', borderRadius: '10px', marginBottom: '8px' }}>
-                        <div>
-                          <span style={{ fontSize: '11px', fontWeight: '700', color: theme.accent }}>Replying trace parameter source node</span>
-                          <p style={{ margin: 0, fontSize: '13px', color: theme.subText, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '400px' }}>{replyTarget.content}</p>
-                        </div>
-                        <FontAwesomeIcon icon={faXmark} style={{ cursor: 'pointer', padding: '4px' }} onClick={() => setReplyTarget(null)} />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                  
-                  <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <input type="text" placeholder={myMemberStatus === 'banned' ? 'ReadOnly trace connection active...' : 'Transmit secure data parameters text stream...'} value={newMessage} disabled={myMemberStatus === 'banned'} onChange={handleInputTyping} style={{ flex: 1, padding: '14px 18px', borderRadius: '12px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '14px', outline: 'none' }} />
-                    <button type="submit" disabled={!newMessage.trim() || myMemberStatus === 'banned'} style={{ height: '46px', width: '46px', borderRadius: '12px', background: theme.accent, color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><FontAwesomeIcon icon={faPaperPlane} /></button>
-                  </form>
-                </div>
-              </>
+                      )}
+                      {replyTarget && (
+                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.bg, padding: '8px 12px', borderRadius: '10px', marginBottom: '8px' }}>
+                          <div>
+                            <span style={{ fontSize: '11px', fontWeight: '700', color: theme.accent }}>Replying trace parameter source node</span>
+                            <p style={{ margin: 0, fontSize: '13px', color: theme.subText, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '400px' }}>{replyTarget.content}</p>
+                          </div>
+                          <FontAwesomeIcon icon={faXmark} style={{ cursor: 'pointer', padding: '4px' }} onClick={() => setReplyTarget(null)} />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                    
+                    <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <input type="text" placeholder={myMemberStatus === 'banned' ? 'ReadOnly trace connection active...' : 'Transmit secure data parameters text stream...'} value={newMessage} disabled={myMemberStatus === 'banned'} onChange={handleInputTyping} style={{ flex: 1, padding: '14px 18px', borderRadius: '12px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '14px', outline: 'none' }} />
+                      <button type="submit" disabled={!newMessage.trim() || myMemberStatus === 'banned'} style={{ height: '46px', width: '46px', borderRadius: '12px', background: theme.accent, color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><FontAwesomeIcon icon={faPaperPlane} /></button>
+                    </form>
+                  </div>
+                </>
+              )
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: theme.subText }}>
                 <FontAwesomeIcon icon={faMessage} style={{ fontSize: '48px', marginBottom: '16px', color: theme.border }} />
@@ -1109,15 +1236,14 @@ export default function ChatRoom({ currentUser }) {
         </div>
       )}
 
-      {/* ==================== VIEWPORT 2: MOBILE MODE LAYOUT ENGINE ==================== */}
+      {/* ==================== VIEWPORT 2: MOBILE INTERACTIVE LAYER ROUTING ==================== */}
       {isMobile && (
         <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           
-          {/* Main Display Sub-tabs switches */}
           <div style={{ flex: 1, overflowY: 'auto', width: '100%', height: 'calc(100% - 70px)' }}>
             {!activeRoomId && currentTab === 'chats' && (
               <div style={{ padding: '16px 20px' }}>
-                <span style={{ fontSize: '24px', fontWeight: '900', display: 'block', marginBottom: '16px', color: theme.accent }}>Imaginary talK</span>
+                <span style={{ fontSize: '24px', fontWeight: '900', display: 'block', marginBottom: '16px', color: theme.accent }}>ItalK</span>
                 <div style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: theme.subText, padding: '8px 4px' }}>Accounts (Directs)</div>
                 {renderRoomListItems(personalRooms)}
                 <div style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: theme.subText, padding: '16px 4px 8px 4px' }}>Groups Channel List</div>
@@ -1163,7 +1289,6 @@ export default function ChatRoom({ currentUser }) {
               </div>
             )}
 
-            {/* MOBILE SYSTEM ISOLATED PROFILE PREVIEW */}
             {!activeRoomId && currentTab === 'profile-view' && (
               <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <span style={{ fontSize: '22px', fontWeight: '800' }}>My Profile Node</span>
@@ -1182,7 +1307,6 @@ export default function ChatRoom({ currentUser }) {
               </div>
             )}
 
-            {/* MOBILE SYSTEM ISOLATED EDIT PROFILE PANEL */}
             {!activeRoomId && currentTab === 'edit-profile' && (
               <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: theme.accent, cursor: 'pointer' }} onClick={() => setCurrentTab('profile-view')}>
@@ -1205,13 +1329,14 @@ export default function ChatRoom({ currentUser }) {
               </div>
             )}
 
-            {/* MOBILE SYSTEM ISOLATED SETTINGS & PRIVACY MATRIX */}
             {!activeRoomId && currentTab === 'settings' && (
               <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <span style={{ fontSize: '22px', fontWeight: '800' }}>Settings & Privacy Sub-routine</span>
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '12px', borderBottom: `1px solid ${theme.border}` }}>
-                  <img src={myProfile.avatar_url} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', border: `2px solid ${theme.accent}` }} />
+                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(myProfile.username), display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:'bold' }}>
+                    {myProfile.avatar_url ? <img src={myProfile.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%' }} /> : myProfile.username?.charAt(0).toUpperCase()}
+                  </div>
                   <div>
                     <h4 style={{ margin: 0, fontSize: '15px' }}>{myProfile.username}</h4>
                     <p style={{ margin: 0, fontSize: '11px', color: theme.subText }}>{currentUser.email}</p>
@@ -1248,84 +1373,85 @@ export default function ChatRoom({ currentUser }) {
               </div>
             )}
 
-            {/* MOBILE INTERACTIVE FULL SCREEN CHAT INTERFACE WINDOW */}
+            {/* MOBILE INTERACTIVE FULL SCREEN CHAT BLOCK PANELS VIEWPORT */}
             {activeRoomId && currentActiveRoomData && (
               <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: theme.bg, zIndex: 500, display: 'flex', flexDirection: 'column' }}>
-                {/* Floating Navigation Core Card Header Bar row layout */}
-                <div style={{ position: 'absolute', top: '10px', left: '10px', right: '10px', height: '60px', background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '18px', border: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', padding: '0 14px', gap: '10px', zIndex: 510, boxShadow: theme.shadow }}>
-                  <FontAwesomeIcon icon={faArrowLeft} style={{ fontSize: '16px', cursor: 'pointer', paddingRight: '4px' }} onClick={() => { setActiveRoomId(null); setActiveRoomData(null); }} />
-                  <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: getRandomColor(currentActiveRoomData.name), display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:'13px', overflow:'hidden', flexShrink:0 }} onClick={() => { if (currentActiveRoomData.type === 'group') { setViewingGroupMeta(true); } else { const alternative = currentActiveRoomData.room_members?.find(m => m.user_id !== currentUser.id); if (alternative) setViewingUserTarget(alternative.profiles); } }}>
-                    {currentActiveRoomData.avatar_url && currentActiveRoomData.avatar_url !== "" ? <img src={currentActiveRoomData.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : currentActiveRoomData.name?.charAt(0).toUpperCase()}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h4 style={{ margin: 0, fontSize: '13.5px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentActiveRoomData.name}</h4>
-                    <div style={{ fontSize: '10px', color: '#34c759', fontWeight: 'bold' }}>Online handshakes sync</div>
-                  </div>
-                  <FontAwesomeIcon icon={faEllipsisVertical} onClick={() => setShowHeaderMenu(!showHeaderMenu)} style={{ padding: '6px', cursor: 'pointer' }} />
-                  
-                  {showHeaderMenu && (
-                    <div style={{ position: 'absolute', right: '10px', top: '55px', width: '160px', background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '12px', padding: '4px', zIndex: 600, display: 'flex', flexDirection: 'column' }}>
-                      <button onClick={handleClearChatDatabase} style={{ background: 'none', border: 'none', color: '#ff3b30', padding: '8px', fontSize: '12px', textAlign: 'left', fontWeight: '700' }}><FontAwesomeIcon icon={faTrash} /> Clear History</button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Sub-floating layer Pinned Notifier bar row display */}
-                {pinnedMessage && (
-                  <div style={{ position: 'absolute', top: '76px', left: '14px', right: '14px', background: theme.floatingBg, backdropFilter: 'blur(10px)', borderLeft: `3px solid ${theme.accent}`, padding: '8px 12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', zIndex: 505, boxShadow: theme.shadow }}>
-                    <span style={{ fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '85%' }}>📌 {pinnedMessage.content}</span>
-                    <FontAwesomeIcon icon={faXmark} style={{ opacity: 0.6 }} onClick={() => togglePinMessage(pinnedMessage)} />
-                  </div>
-                )}
-
-                {/* Mobile Scroller Stream Block Grid */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '85px 16px 85px 16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  {filteredMessages.map(msg => {
-                    const isMe = msg.sender_id === currentUser.id;
-                    const nestedReply = msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id) : null;
-                    return (
-                      <div key={msg.id} onContextMenu={(e) => handleMsgContextMenu(e, msg)} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '8px', width: '100%' }}>
-                        <div style={{ display: 'flex', flexDirection: isMe ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: '8px', maxWidth: '80%' }}>
-                          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: getRandomColor(msg.profiles?.username), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontSize: '11px', fontWeight: '700', overflow:'hidden', flexShrink:0 }}>
-                            {msg.profiles?.avatar_url && msg.profiles.avatar_url !== "" ? <img src={msg.profiles.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : msg.profiles?.username?.charAt(0).toUpperCase()}
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
-                            <span style={{ fontSize: '11px', color: theme.subText, marginBottom: '2px', padding: '0 4px' }}>{msg.profiles?.username}</span>
-                            {nestedReply && (
-                              <div style={{ background: theme.card, padding: '4px 8px', borderRadius: '6px', fontSize: '11px', opacity: 0.7, marginBottom: '-2px' }}>
-                                ↳ {nestedReply.content}
-                              </div>
-                            )}
-                            <div style={{ padding: '10px 14px', borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: isMe ? theme.bubbleMe : theme.bubbleUser, color: isMe ? theme.textMe : theme.textUser, fontSize: '13.5px', wordBreak: 'break-word' }}>
-                              {renderMessageContent(msg.content)}
-                            </div>
-                            <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '2px', padding: '0 4px' }}>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          </div>
-                        </div>
+                {/* Mobile Full Screen Profile Page Injection Trigger */}
+                {isViewingInfo ? renderInfoPage() : (
+                  <>
+                    <div style={{ position: 'absolute', top: '10px', left: '10px', right: '10px', height: '60px', background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '18px', border: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', padding: '0 14px', gap: '10px', zIndex: 510, boxShadow: theme.shadow }}>
+                      <FontAwesomeIcon icon={faArrowLeft} style={{ fontSize: '16px', cursor: 'pointer', paddingRight: '4px' }} onClick={() => { setActiveRoomId(null); setIsViewingInfo(false); }} />
+                      <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: getRandomColor(currentActiveRoomData.name), display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:'13px', overflow:'hidden', flexShrink:0 }} onClick={() => setIsViewingInfo(true)}>
+                        {currentActiveRoomData.avatar_url && currentActiveRoomData.avatar_url !== "" ? <img src={currentActiveRoomData.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : currentActiveRoomData.name?.charAt(0).toUpperCase()}
                       </div>
-                    );
-                  })}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                {/* Mobile Floating Input Dock row layout configuration */}
-                <div style={{ position: 'absolute', bottom: '10px', left: '10px', right: '10px', background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '18px', padding: '8px', border: `1px solid ${theme.border}`, zIndex: 510, boxShadow: theme.shadow, display: 'flex', flexDirection: 'column' }}>
-                  {replyTarget && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', background: theme.bg, padding: '6px 12px', fontSize: '11px', borderRadius: '8px', marginBottom: '4px' }}>
-                      <span>Replying payload text trace...</span>
-                      <FontAwesomeIcon icon={faXmark} onClick={() => setReplyTarget(null)} />
+                      <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setIsViewingInfo(true)}>
+                        <h4 style={{ margin: 0, fontSize: '13.5px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentActiveRoomData.name}</h4>
+                        <div style={{ fontSize: '10px', color: '#34c759', fontWeight: 'bold' }}>Click for profile info</div>
+                      </div>
+                      <FontAwesomeIcon icon={faEllipsisVertical} onClick={() => setShowHeaderMenu(!showHeaderMenu)} style={{ padding: '6px', cursor: 'pointer' }} />
+                      
+                      {showHeaderMenu && (
+                        <div style={{ position: 'absolute', right: '10px', top: '55px', width: '160px', background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '12px', padding: '4px', zIndex: 600, display: 'flex', flexDirection: 'column' }}>
+                          <button onClick={handleClearChatDatabase} style={{ background: 'none', border: 'none', color: '#ff3b30', padding: '8px', fontSize: '12px', textAlign: 'left', fontWeight: '700' }}><FontAwesomeIcon icon={faTrash} /> Clear History</button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    <input type="text" placeholder="Message trace payload..." value={newMessage} onChange={handleInputTyping} style={{ flex: 1, padding: '10px 12px', borderRadius: '12px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '13.5px', outline: 'none' }} />
-                    <button type="submit" style={{ width: '38px', height: '38px', borderRadius: '50%', background: theme.accent, border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FontAwesomeIcon icon={faPaperPlane} size="sm" /></button>
-                  </form>
-                </div>
+
+                    {pinnedMessage && (
+                      <div style={{ position: 'absolute', top: '76px', left: '14px', right: '14px', background: theme.floatingBg, backdropFilter: 'blur(10px)', borderLeft: `3px solid ${theme.accent}`, padding: '8px 12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', zIndex: 505, boxShadow: theme.shadow }}>
+                        <span style={{ fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '85%' }}>📌 {pinnedMessage.content}</span>
+                        <FontAwesomeIcon icon={faXmark} style={{ opacity: 0.6 }} onClick={() => togglePinMessage(pinnedMessage)} />
+                      </div>
+                    )}
+
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '85px 16px 85px 16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      {filteredMessages.map(msg => {
+                        const isMe = msg.sender_id === currentUser.id;
+                        const nestedReply = msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id) : null;
+                        return (
+                          <div key={msg.id} onContextMenu={(e) => handleMsgContextMenu(e, msg)} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '8px', width: '100%' }}>
+                            <div style={{ display: 'flex', flexDirection: isMe ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: '8px', maxWidth: '80%' }}>
+                              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: getRandomColor(msg.profiles?.username), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontSize: '11px', fontWeight: '700', overflow:'hidden', flexShrink:0, cursor:'pointer' }} onClick={() => setIsViewingInfo(true)}>
+                                {msg.profiles?.avatar_url && msg.profiles.avatar_url !== "" ? <img src={msg.profiles.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : msg.profiles?.username?.charAt(0).toUpperCase()}
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
+                                <span style={{ fontSize: '11px', color: theme.subText, marginBottom: '2px', padding: '0 4px', cursor:'pointer' }} onClick={() => setIsViewingInfo(true)}>{msg.profiles?.username}</span>
+                                {nestedReply && (
+                                  <div style={{ background: theme.card, padding: '4px 8px', borderRadius: '6px', fontSize: '11px', opacity: 0.7, marginBottom: '-2px' }}>
+                                    ↳ {nestedReply.content}
+                                  </div>
+                                )}
+                                <div style={{ padding: '10px 14px', borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: isMe ? theme.bubbleMe : theme.bubbleUser, color: isMe ? theme.textMe : theme.textUser, fontSize: '13.5px', wordBreak: 'break-word' }}>
+                                  {renderMessageContent(msg.content)}
+                                </div>
+                                <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '2px', padding: '0 4px' }}>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div ref={messagesEndRef} />
+                    </div>
+
+                    <div style={{ position: 'absolute', bottom: '10px', left: '10px', right: '10px', background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '18px', padding: '8px', border: `1px solid ${theme.border}`, zIndex: 510, boxShadow: theme.shadow, display: 'flex', flexDirection: 'column' }}>
+                      {replyTarget && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', background: theme.bg, padding: '6px 12px', fontSize: '11px', borderRadius: '8px', marginBottom: '4px' }}>
+                          <span>Replying payload text trace...</span>
+                          <FontAwesomeIcon icon={faXmark} onClick={() => setReplyTarget(null)} />
+                        </div>
+                      )}
+                      <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <input type="text" placeholder={myMemberStatus === 'banned' ? 'Muted by Admin...' : 'Message trace payload...'} value={newMessage} disabled={myMemberStatus === 'banned'} onChange={handleInputTyping} style={{ flex: 1, padding: '10px 12px', borderRadius: '12px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '13.5px', outline: 'none' }} />
+                        <button type="submit" disabled={!newMessage.trim() || myMemberStatus === 'banned'} style={{ width: '38px', height: '38px', borderRadius: '50%', background: theme.accent, border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FontAwesomeIcon icon={faPaperPlane} size="sm" /></button>
+                      </form>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
 
-          {/* LOWER MOBILE FLOATING NAVIGATION SPRING ASSISTED BAR (LIQUID SHADOW INJECTED) */}
+          {/* LOWER MOBILE FLOATING NAVIGATION BAR */}
           {!activeRoomId && (
             <div style={{ position: 'fixed', bottom: '16px', left: '4%', width: '92%', height: '64px', background: theme.card, borderRadius: '30px', boxShadow: '0 10px 30px rgba(0,0,0,0.25)', border: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-around', alignItems: 'center', zIndex: 99, padding: '0 8px', boxSizing: 'border-box' }}>
               {tabsConfig.map(tab => {
@@ -1333,7 +1459,7 @@ export default function ChatRoom({ currentUser }) {
                 return (
                   <button 
                     key={tab.id}
-                    onClick={() => { setCurrentTab(tab.id); setActiveRoomId(null); }}
+                    onClick={() => { setCurrentTab(tab.id); setActiveRoomId(null); setIsViewingInfo(false); }}
                     style={{ background: 'none', border: 'none', color: isSelected ? theme.accent : theme.subText, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer', width: '54px', height: '100%', justifyContent: 'center', position: 'relative', outline: 'none' }}
                   >
                     {isSelected && (
@@ -1352,74 +1478,6 @@ export default function ChatRoom({ currentUser }) {
           )}
         </div>
       )}
-
-      {/* CLUSTER GROUP TOPOLOGY USER ROSTER LEDGER ACTION MODAL OVERLAY */}
-      <AnimatePresence>
-        {viewingGroupMeta && currentActiveRoomData && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px', boxSizing: 'border-box' }} onClick={() => setViewingGroupMeta(false)}>
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} transition={{ duration: 0.15 }} style={{ background: theme.card, borderRadius: '28px', padding: '24px', width: '100%', maxWidth: '380px', border: `1px solid ${theme.border}`, boxShadow: theme.shadow }} onClick={e => e.stopPropagation()}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '20px', fontWeight: '800', textAlign: 'center' }}>Group Control Panel</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-                <div style={{ width: '70px', height: '70px', borderRadius: '50%', background: getRandomColor(currentActiveRoomData.name), display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:'24px', fontWeight:'bold', overflow:'hidden' }}>
-                  {currentActiveRoomData.avatar_url && currentActiveRoomData.avatar_url !== "" ? <img src={currentActiveRoomData.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : currentActiveRoomData.name?.charAt(0).toUpperCase()}
-                </div>
-                <h4 style={{ margin: 0, fontSize: '18px' }}>{currentActiveRoomData.name}</h4>
-              </div>
-              <div style={{ margin: '16px 0', maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {roomMembers.map(member => (
-                  <div key={member.user_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: theme.bg, borderRadius: '14px', border: `1px solid ${theme.border}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: getRandomColor(member.profiles?.username), display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:'12px', overflow:'hidden' }}>
-                        {member.profiles?.avatar_url ? <img src={member.profiles.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : member.profiles?.username?.charAt(0).toUpperCase()}
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontWeight: '700', fontSize: '14px' }}>{member.profiles?.username}</span>
-                        <span style={{ fontSize: '11px', color: theme.accent, fontWeight: '800' }}>{member.role?.toUpperCase()} {member.status === 'banned' && '[MUTED]'}</span>
-                      </div>
-                    </div>
-                    {['owner', 'admin'].includes(myRoomRole) && member.user_id !== currentUser.id && (
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        {myRoomRole === 'owner' && member.role !== 'admin' && <button onClick={() => manageMemberAction(member.user_id, 'admin')} style={{ background: theme.accent, border: 'none', color: '#fff', padding: '6px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>Admin</button>}
-                        {member.status !== 'banned' && <button onClick={() => manageMemberAction(member.user_id, 'ban_text')} style={{ background: '#ff9500', border: 'none', color: '#fff', padding: '6px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>Mute</button>}
-                        <button onClick={() => manageMemberAction(member.user_id, 'kick')} style={{ background: '#ff3b30', border: 'none', color: '#fff', padding: '6px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>Kick</button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <button onClick={() => setViewingGroupMeta(false)} style={{ width: '100%', padding: '14px', background: theme.border, border: 'none', color: theme.text, borderRadius: '16px', fontWeight: '800', cursor: 'pointer', fontSize: '15px' }}>Close Diagnostics View</button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* DETACHED ISOLATED USER PORFOLIO TARGET VIEW MODAL OVERLAY */}
-      <AnimatePresence>
-        {viewingUserTarget && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setViewingUserTarget(null)}>
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} style={{ background: theme.card, borderRadius: '24px', padding: '24px', width: '340px', border: `1px solid ${theme.border}`, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '16px' }} onClick={e => e.stopPropagation()}>
-              <div style={{ width: '90px', height: '90px', borderRadius: '50%', background: getRandomColor(viewingUserTarget.username), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '28px', fontWeight: '800', margin: '0 auto', overflow: 'hidden' }}>
-                {viewingUserTarget.avatar_url && viewingUserTarget.avatar_url !== "" ? <img src={viewingUserTarget.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : viewingUserTarget.username?.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '800' }}>{viewingUserTarget.username}</h3>
-                <span style={{ fontSize: '12px', color: theme.accent, fontWeight: '700' }}>@{viewingUserTarget.unique_id}</span>
-              </div>
-              <div style={{ textAlign: 'left', background: theme.bg, padding: '14px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div>
-                  <span style={{ fontSize: '10px', fontWeight: '800', color: theme.subText }}>BIOGRAPHY</span>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '13.5px' }}>{viewingUserTarget.privacy_bio === 'public' ? viewingUserTarget.biography : '🔒 Isolated Vault Content'}</p>
-                </div>
-                <div>
-                  <span style={{ fontSize: '10px', fontWeight: '800', color: theme.subText }}>BIRTHDAY</span>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '13.5px' }}>{viewingUserTarget.privacy_birthday === 'public' ? viewingUserTarget.birthday : '🔒 Isolated Vault Content'}</p>
-                </div>
-              </div>
-              <button onClick={() => setViewingUserTarget(null)} style={{ width: '100%', padding: '12px', background: theme.border, border: 'none', color: theme.text, borderRadius: '14px', fontWeight: '700', cursor: 'pointer' }}>Close Spectrum View</button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
     </div>
   );
