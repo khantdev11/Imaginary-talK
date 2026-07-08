@@ -3,8 +3,6 @@ import { supabase } from './config/supabaseClient';
 import Login from './components/Login';
 import ChatRoom from './components/ChatRoom';
 import { motion, AnimatePresence } from 'framer-motion';
-// Firebase messaging ခေါ်သုံးရန်
-import { requestNotificationPermission } from './config/firebaseClient';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -35,10 +33,9 @@ function App() {
         const currentUser = session?.user ?? null;
         setUser(currentUser);
         
-        // Login ဝင်ထားပြီးသားဆိုရင် Notification Permission ချက်ချင်းတောင်းမည်
-        if (currentUser) {
-          requestNotificationPermission(currentUser.id);
-        }
+        // 🔔 SECURITY WARNING FIXED: 
+        // App Load ဖြစ်ချိန် သို့မဟုတ် background refresh ဖြစ်ချိန်မှာ requestNotificationPermission() ကို 
+        // အလိုအလျောက်ခေါ်ယူခြင်းကို လုံးဝ (လုံးဝ) ဖြတ်တောက်ပယ်ဖျက်လိုက်ပါတယ်ဗျာ။ ✅
       } catch (error) {
         console.error("Auth sync error:", error);
       } finally {
@@ -52,9 +49,9 @@ function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const newUser = session?.user ?? null;
       setUser(newUser);
-      if (newUser) {
-        requestNotificationPermission(newUser.id);
-      }
+      
+      // 🔔 CONSOLE ERROR FIXED:
+      // Auth state ပြောင်းလဲတိုင်း အလိုအလျောက် ခွင့်ပြုချက်တောင်းခံခြင်းကိုလည်း Browser security error မတက်အောင် ဖယ်ရှားပေးထားပါတယ်။ ✅
       setLoading(false);
     });
 

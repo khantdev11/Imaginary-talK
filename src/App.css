@@ -1,11 +1,38 @@
-/* Modern Reset & Design Tokens */
+/* ====================================================================
+   Modern Reset & Design System Tokens
+   ==================================================================== */
 :root {
+  /* System Theme Variables (Fallback Safe Tokens) */
+  --accent: #007aff;
+  --accent-bg: rgba(0, 122, 255, 0.1);
+  --text-main: #111827;
+  --text-sub: #4b5563;
+  --text-heading: #1f2937;
+  --card-bg: #ffffff;
+  --social-bg: #f3f4f6;
+  --border: #e5e7eb;
+
+  /* Animation & Layout Design Tokens */
   --transition-smooth: 0.3s cubic-bezier(0.2, 0, 0, 1);
   --border-radius-pill: 50px;
   --border-radius-card: 20px;
-  /* Using clamp() for fluid typography/spacing if needed in parent */
 }
 
+/* Dark Mode Variable Overrides (အကယ်၍ App မှာ Dark Mode သုံးထားရင်) */
+.dark-mode, [data-theme="dark"] {
+  --text-main: #f3f4f6;
+  --text-sub: #8e8e93;
+  --text-heading: #ffffff;
+  --card-bg: #16161a;
+  --social-bg: #24242b;
+  --border: #24242b;
+}
+
+/* ====================================================================
+   Core Component Layout Styles
+   ==================================================================== */
+
+/* Interactive Counter Badge Pill */
 .counter {
   font-size: 14px;
   font-weight: 600;
@@ -21,32 +48,46 @@
   align-items: center;
   gap: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  user-select: none;
+  outline: none;
 
   &:hover {
     background: var(--accent);
-    color: white;
+    color: #ffffff;
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(0, 122, 255, 0.3);
   }
+
+  &:active {
+    transform: translateY(0);
+  }
 }
 
+/* 📱 High-End 3D Parallax Hero Container */
 .hero {
   position: relative;
+  width: 100%;
+  max-width: 500px;
   display: flex;
   align-items: center;
   justify-content: center;
-  perspective: 1500px; /* Wider perspective for more depth */
+  perspective: 1500px; /* Gives realistic depth to 3D children elements */
   padding: 40px 0;
+  margin: 0 auto;
 
+  /* Base Assets Structural Alignment */
   .base, .framework, .vite {
+    position: relative;
     inset-inline: 0;
     margin: 0 auto;
     transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform; /* Optimizes GPU hardware acceleration rendering */
   }
 
   .base {
     width: 180px;
-    filter: drop-shadow(0 20px 30px rgba(0, 0, 0, 0.1));
+    filter: drop-shadow(0 20px 30px rgba(0, 0, 0, 0.15));
+    z-index: 1;
   }
 
   .framework, .vite {
@@ -55,72 +96,98 @@
   }
 
   .framework {
-    z-index: 2;
+    z-index: 3;
     top: 20px;
     height: 32px;
     transform: rotateZ(300deg) rotateX(44deg) rotateY(39deg) scale(1.5);
+    filter: drop-shadow(0 10px 15px rgba(0, 122, 255, 0.2));
   }
 
   .vite {
-    z-index: 1;
+    z-index: 2;
     top: 90px;
     height: 30px;
     transform: rotateZ(300deg) rotateX(40deg) rotateY(39deg) scale(0.9);
+    filter: drop-shadow(0 10px 15px rgba(255, 149, 0, 0.2));
   }
 
-  /* Smooth 3D parallax on hover */
+  /* Responsive Interactive Smooth 3D Parallax Triggers on Hover */
   &:hover {
-    .framework { transform: rotateZ(300deg) rotateX(40deg) rotateY(30deg) scale(1.6) translateY(-10px); }
-    .vite { transform: rotateZ(300deg) rotateX(35deg) rotateY(30deg) scale(1.0) translateY(10px); }
+    .framework { 
+      transform: rotateZ(300deg) rotateX(40deg) rotateY(30deg) scale(1.6) translateY(-12px); 
+    }
+    .vite { 
+      transform: rotateZ(300deg) rotateX(35deg) rotateY(30deg) scale(1.0) translateY(12px); 
+    }
   }
 }
 
+/* Master Centered Workspace Wrapper */
 #center {
   display: flex;
   flex-direction: column;
   gap: 20px;
   justify-content: center;
   align-items: center;
-  padding: 20px;
+  padding: 24px;
+  box-sizing: border-box;
 }
 
+/* Modern Adaptive Grid Navigation Matrix */
 #next-steps {
   display: grid;
   grid-template-columns: 1fr 1fr;
   border-top: 1px solid var(--border);
   gap: 1px;
-  background-color: var(--border); /* Creates grid lines */
+  background-color: var(--border); /* Acts as solid fine grid lines border */
+  width: 100%;
+  max-width: 1200px;
+  margin-top: 32px;
+  border-radius: var(--border-radius-card);
+  overflow: hidden;
 
   & > div {
     padding: 48px;
-    background: var(--card-bg, #ffffff);
+    background: var(--card-bg);
     transition: background 0.3s ease;
   }
 
-  @media (max-width: 1024px) {
+  /* Mobile Grid Adaptation Layout */
+  @media (max-width: 840px) {
     grid-template-columns: 1fr;
+    & > div {
+      padding: 32px 24px;
+    }
   }
 }
 
+/* Document Partition Node */
 #docs {
   border-right: 1px solid var(--border);
+
+  @media (max-width: 840px) {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
 }
 
+/* Next Steps Lists & Interactive Links */
 #next-steps ul {
   list-style: none;
   padding: 0;
+  margin: 24px 0 0 0;
   display: flex;
+  flex-wrap: wrap; /* Prevents overflow strings on narrow mobile viewports */
   gap: 12px;
-  margin: 24px 0 0;
 
   a {
-    color: var(--text-h);
+    color: var(--text-heading);
     font-size: 14px;
     font-weight: 500;
     border-radius: 12px;
     background: var(--social-bg);
     border: 1px solid var(--border);
-    display: flex;
+    display: inline-flex;
     padding: 10px 16px;
     align-items: center;
     gap: 8px;
@@ -129,19 +196,20 @@
 
     &:hover {
       background: var(--accent);
-      color: white;
+      color: #ffffff;
       border-color: var(--accent);
       transform: translateY(-2px);
     }
   }
 }
 
-/* Add subtle animated ticks */
+/* Subtle Architectural Decorative Animated Dividers */
 .ticks {
   position: relative;
   width: 100%;
   height: 2px;
   background: var(--border);
+  margin: 16px 0;
 
   &::before, &::after {
     content: '';
@@ -151,6 +219,7 @@
     height: 10px;
     background: var(--border);
     border-radius: 50%;
+    transition: background var(--transition-smooth);
   }
   &::before { left: 0; }
   &::after { right: 0; }

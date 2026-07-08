@@ -14,7 +14,8 @@ import {
   faQuoteLeft, faCircle, faUserPen, faUserCircle, faHome, faUserGroup, 
   faXmark, faCheckSquare, faTimesCircle, faGlobe, faUserLock,
   faLink, faUser, faTrashCan, faFileContract, faCircleInfo, faCommentDots, 
-  faShieldHalved, faUserGear, faUnlock, faWrench, faBullhorn, faRobot
+  faShieldHalved, faUserGear, faUnlock, faWrench, faBullhorn, faRobot,
+  faCertificate, faExclamationTriangle, faClock
 } from '@fortawesome/free-solid-svg-icons';
 
 // Hash-based Consistent Avatar Random Color System
@@ -32,7 +33,7 @@ export default function ChatRoom({ currentUser }) {
   const [activeRoomId, setActiveRoomId] = useState(null);
   const [isViewingInfo, setIsViewingInfo] = useState(false); 
   const [darkMode, setDarkMode] = useState(true);
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 840);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth <= 840 : false);
 
   // App Core State
   const [myProfile, setMyProfile] = useState({ username: '', unique_id: '', avatar_url: '', biography: '', birthday: '', privacy_muted: false, privacy_bio: 'public', privacy_profile: 'public', privacy_birthday: 'public', role: 'member' });
@@ -48,7 +49,7 @@ export default function ChatRoom({ currentUser }) {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
 
   // Dynamic Real-time Status Indicators
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   // Interface Interactive Views States
   const [searchQuery, setSearchQuery] = useState('');
@@ -68,6 +69,7 @@ export default function ChatRoom({ currentUser }) {
   const [adminBroadcastText, setAdminBroadcastText] = useState('');
   const [adminSelectedUser, setAdminSelectedUser] = useState(null);
   const [adminUserWarningText, setAdminUserWarningText] = useState('');
+  const [banDuration, setBanDuration] = useState('lifetime'); // 'lifetime', '1day', '7days'
 
   // Feedback & Security Temporary Inputs State
   const [feedbackText, setFeedbackText] = useState('');
@@ -82,6 +84,10 @@ export default function ChatRoom({ currentUser }) {
   const [roomHeaderMenuOpen, setRoomHeaderMenuOpen] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false); 
 
+  // Chat List Item Press Context Menu State Options
+  const [activeMenuRoomId, setActiveMenuRoomId] = useState(null);
+  const [roomMenuPosition, setRoomMenuPosition] = useState({ x: 0, y: 0 });
+
   // Form Field Local Temporary Edit States
   const [editUsername, setEditUsername] = useState('');
   const [editBio, setEditBio] = useState('');
@@ -95,17 +101,12 @@ export default function ChatRoom({ currentUser }) {
   const messagesEndRef = useRef(null);
   const activeRoomIdRef = useRef(activeRoomId);
   const roomsRef = useRef(rooms);
+  const myProfileRef = useRef(myProfile);
 
   // Real-time notification synchronization references
   useEffect(() => { activeRoomIdRef.current = activeRoomId; }, [activeRoomId]);
   useEffect(() => { roomsRef.current = rooms; }, [rooms]);
-
-  // Native Web System Out-of-App Notification Engine Requester
-  useEffect(() => {
-    if ("Notification" in window) {
-      Notification.requestPermission();
-    }
-  }, []);
+  useEffect(() => { myProfileRef.current = myProfile; }, [myProfile]);
 
   // Enhanced Light / Dark Mode Colors Configs
   const theme = useMemo(() => ({
@@ -133,9 +134,13 @@ export default function ChatRoom({ currentUser }) {
     }, 2500);
   };
 
-  // Trigger Out-of-App Push Notification Module
+  // Trigger Out-of-App Push Notification Module (Strictly checks privacy_muted toggle)
   const triggerPushNotification = (title, bodyContext) => {
-    if ("Notification" in window && Notification.permission === "granted") {
+    if (myProfileRef.current?.privacy_muted === true) {
+      return; 
+    }
+
+    if (typeof window !== 'undefined' && "Notification" in window && Notification.permission === "granted") {
       new Notification(title, {
         body: bodyContext,
         icon: 'https://images.unsplash.com/photo-1614741118887-7a4ee193a5fa?w=128&h=128&fit=crop'
@@ -247,6 +252,7 @@ export default function ChatRoom({ currentUser }) {
             privacy_bio: 'public',
             privacy_profile: 'public',
             privacy_birthday: 'public',
+            privacy_muted: false,
             role: 'member'
           }])
           .select()
@@ -269,19 +275,29 @@ export default function ChatRoom({ currentUser }) {
 
   const handleBotWelcomeGreeting = async (newProfileData) => {
     try {
-      const { data: botRoom, error: roomErr } = await supabase
+      let { data: botRoom, error: roomErr } = await supabase
         .from('chat_rooms')
-        .insert([{ type: 'personal', name: 'ItalK Official Noti Bot', is_bot_channel: true }])
-        .select().single();
+        .select('*')
+        .eq('is_bot_channel', true)
+        .maybeSingle();
 
-      if (!roomErr && botRoom) {
+      if (!botRoom && !roomErr) {
+        const { data: createdRoom, error: createErr } = await supabase
+          .from('chat_rooms')
+          .insert([{ type: 'personal', name: 'ItalK Official Noti Bot', is_bot_channel: true }])
+          .select().single();
+        
+        if (!createErr) botRoom = createdRoom;
+      }
+
+      if (botRoom) {
         await supabase.from('room_members').insert([
-          { room_id: botRoom.id, user_id: currentUser.id, role: 'member' }
+          { room_id: botRoom.id, user_id: currentUser.id, role: 'member', status: 'active', is_pinned: false, is_muted: false }
         ]);
 
         await supabase.from('messages').insert([{
           room_id: botRoom.id,
-          sender_id: '00000000-0000-0000-0000-000000000000', // Mock dedicated bot UUID node
+          sender_id: null, 
           content: `Welcome ${newProfileData.username} to ItalK Network Structure! This is a secure Read-Only transmission system for official alerts. Status: Operational.`,
           is_bot_generated: true
         }]);
@@ -302,7 +318,7 @@ export default function ChatRoom({ currentUser }) {
     try {
       const { data: memberships, error: memError } = await supabase
         .from('room_members')
-        .select('room_id, is_muted, status, role')
+        .select('room_id, is_muted, is_pinned, status, role')
         .eq('user_id', currentUser.id);
 
       if (memError) throw memError;
@@ -331,20 +347,18 @@ export default function ChatRoom({ currentUser }) {
         let roomTitle = room.name;
         let roomAvatar = room.avatar_url;
 
-        if (room.type === 'personal') {
-          if (room.is_bot_channel) {
-            roomTitle = "ItalK Official Noti Bot";
-            roomAvatar = "https://images.unsplash.com/photo-1546776310-eef45dd6d63c?w=150&h=150&fit=crop";
+        if (room.is_bot_channel || room.name === 'ItalK Official Noti Bot') {
+          roomTitle = "ItalK Official Noti Bot";
+          roomAvatar = "https://images.unsplash.com/photo-1546776310-eef45dd6d63c?w=150&h=150&fit=crop";
+        } else if (room.type === 'personal') {
+          const alternateMember = room.room_members?.find(m => m.user_id !== currentUser.id);
+          if (alternateMember && alternateMember.profiles) {
+            roomTitle = alternateMember.profiles.username;
+            roomAvatar = alternateMember.profiles.privacy_profile === 'public' || alternateMember.user_id === currentUser.id
+              ? alternateMember.profiles.avatar_url 
+              : 'https://img-url1.netlify.app/default';
           } else {
-            const alternateMember = room.room_members?.find(m => m.user_id !== currentUser.id);
-            if (alternateMember && alternateMember.profiles) {
-              roomTitle = alternateMember.profiles.username;
-              roomAvatar = alternateMember.profiles.privacy_profile === 'public' || alternateMember.user_id === currentUser.id
-                ? alternateMember.profiles.avatar_url 
-                : 'https://img-url1.netlify.app/default';
-            } else {
-              roomTitle = 'Saved Chat';
-            }
+            roomTitle = 'Saved Chat';
           }
         }
 
@@ -356,9 +370,14 @@ export default function ChatRoom({ currentUser }) {
           lastMessageTime: lastMsg ? new Date(lastMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
           rawTime: lastMsg ? new Date(lastMsg.created_at) : new Date(room.created_at),
           isMuted: specificMemberMeta?.is_muted || false,
+          isPinned: specificMemberMeta?.is_pinned || false,
           myStatus: specificMemberMeta?.status || 'active'
         };
-      }).sort((a, b) => b.rawTime - a.rawTime);
+      }).sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        return b.rawTime - a.rawTime;
+      });
 
       setRooms(formattedRooms);
     } catch (err) {
@@ -414,7 +433,7 @@ export default function ChatRoom({ currentUser }) {
     }
 
     if (myMemberStatus === 'banned') {
-      showNotification('You have been muted from sending messages in this workspace.', 'error');
+      showNotification('You have been restricted from sending messages here.', 'error');
       return;
     }
 
@@ -505,7 +524,49 @@ export default function ChatRoom({ currentUser }) {
     setActiveMenuMessageId(msg.id);
     const clickX = e.clientX > window.innerWidth - 180 ? e.clientX - 160 : e.clientX;
     const clickY = e.clientY > window.innerHeight - 200 ? e.clientY - 180 : e.clientY;
+    setActiveMenuRoomId(null); 
     setMenuPosition({ x: clickX, y: clickY });
+  };
+
+  const handleRoomContextMenu = (e, roomId) => {
+    e.preventDefault();
+    setActiveMenuRoomId(roomId);
+    const clickX = e.clientX > window.innerWidth - 200 ? e.clientX - 180 : e.clientX;
+    const clickY = e.clientY > window.innerHeight - 180 ? e.clientY - 150 : e.clientY;
+    setActiveMenuMessageId(null); 
+    setRoomMenuPosition({ x: clickX, y: clickY });
+  };
+
+  const togglePinRoomState = async (roomId, currentPinStatus) => {
+    try {
+      const { error } = await supabase
+        .from('room_members')
+        .update({ is_pinned: !currentPinStatus })
+        .eq('room_id', roomId)
+        .eq('user_id', currentUser.id);
+      if (error) throw error;
+      showNotification(!currentPinStatus ? 'Chat space pinned to top routing ledger' : 'Chat space unpinned');
+      setActiveMenuRoomId(null);
+      fetchRoomsList();
+    } catch (err) {
+      showNotification('Pin adjustment failure context link.', 'error');
+    }
+  };
+
+  const toggleMuteRoomState = async (roomId, currentMuteStatus) => {
+    try {
+      const { error } = await supabase
+        .from('room_members')
+        .update({ is_muted: !currentMuteStatus })
+        .eq('room_id', roomId)
+        .eq('user_id', currentUser.id);
+      if (error) throw error;
+      showNotification(!currentMuteStatus ? 'Notifications loops silenced' : 'Notifications alerts restored');
+      setActiveMenuRoomId(null);
+      fetchRoomsList();
+    } catch (err) {
+      showNotification('Mute adjustment failure context link.', 'error');
+    }
   };
 
   const executeMessageDelete = async (msgId) => {
@@ -656,7 +717,6 @@ export default function ChatRoom({ currentUser }) {
     }
   };
 
-  // Global Core Admin Actions Manager Framework
   const handleToggleMaintenanceMode = async () => {
     const nextState = !maintenanceMode;
     try {
@@ -672,21 +732,28 @@ export default function ChatRoom({ currentUser }) {
   const executeGlobalBroadcast = async () => {
     if (!adminBroadcastText.trim()) return;
     try {
-      const { data: broadcastRooms, error: rErr } = await supabase.from('chat_rooms').select('id').eq('is_bot_channel', true);
+      const { data: targetBotRooms, error: rErr } = await supabase
+        .from('chat_rooms')
+        .select('id')
+        .eq('is_bot_channel', true);
+
       if (rErr) throw rErr;
 
-      if (broadcastRooms && broadcastRooms.length > 0) {
-        const messagePayloads = broadcastRooms.map(rm => ({
-          room_id: rm.id,
-          sender_id: '00000000-0000-0000-0000-000000000000',
+      if (targetBotRooms && targetBotRooms.length > 0) {
+        const broadcastPayloads = targetBotRooms.map(room => ({
+          room_id: room.id,
+          sender_id: null, 
           content: adminBroadcastText.trim(),
           is_bot_generated: true
         }));
 
-        const { error: insErr } = await supabase.from('messages').insert(messagePayloads);
+        const { error: insErr } = await supabase.from('messages').insert(broadcastPayloads);
         if (insErr) throw insErr;
-        showNotification(`Dispatched ItalK Broadcast array cleanly across pipelines.`);
+        
+        showNotification(`Dispatched ItalK Broadcast Alert packets safely across user accounts pipelines.`);
         setAdminBroadcastText('');
+      } else {
+        showNotification('No active bot endpoints mapped in channel ledger matrix cluster.', 'error');
       }
     } catch (err) {
       showNotification('Broadcast system error: ' + err.message, 'error');
@@ -704,6 +771,53 @@ export default function ChatRoom({ currentUser }) {
     }
   };
 
+  const handleIssueUserWarning = async (e) => {
+    e.preventDefault();
+    if (!adminSelectedUser || !adminUserWarningText.trim()) {
+      showNotification('Please select a target user and fill the warning text field.', 'error');
+      return;
+    }
+
+    try {
+      const { data: userBotMember } = await supabase
+        .from('room_members')
+        .select('room_id, chat_rooms!inner(is_bot_channel)')
+        .eq('user_id', adminSelectedUser.id)
+        .eq('chat_rooms.is_bot_channel', true)
+        .maybeSingle();
+
+      if (userBotMember) {
+        const warningPayload = `⚠️ SYSTEM OFFICIAL WARNING: ${adminUserWarningText.trim()}`;
+        await supabase.from('messages').insert([{
+          room_id: userBotMember.room_id,
+          sender_id: null, 
+          content: warningPayload,
+          is_bot_generated: true
+        }]);
+        showNotification(`Official Warning notice payload injected into ${adminSelectedUser.username}'s pipeline successfully.`);
+        setAdminUserWarningText('');
+      } else {
+        showNotification('User specialized isolated bot node not found.', 'error');
+      }
+    } catch (err) {
+      showNotification('Warning deployment system structural error.', 'error');
+    }
+  };
+
+  const handleExecuteGlobalBan = async () => {
+    if (!adminSelectedUser) return;
+    try {
+      const banMetaValue = banDuration === 'lifetime' ? 'banned_lifetime' : `banned_temp_${banDuration}`;
+      const { error } = await supabase.from('profiles').update({ role: banMetaValue }).eq('id', adminSelectedUser.id);
+      if (error) throw error;
+
+      showNotification(`Target node ${adminSelectedUser.username} restricted via duration type: ${banDuration.toUpperCase()}`);
+      supabase.from('profiles').select('*').then(({ data }) => { if (data) setAllProfilesCache(data); });
+    } catch (err) {
+      showNotification('Ban engine injection system level error.', 'error');
+    }
+  };
+
   const handleUpdateProfile = async (e) => {
     if (e) e.preventDefault();
     try {
@@ -713,7 +827,7 @@ export default function ChatRoom({ currentUser }) {
         birthday: editBirthday || null,
         avatar_url: editAvatarUrl
       };
-      const { error } = await supabase.from('profiles').update(updates).eq('id', currentUser.id);
+      const { error = null } = await supabase.from('profiles').update(updates).eq('id', currentUser.id);
       if (error) throw error;
       setMyProfile(prev => ({ ...prev, ...updates }));
       showNotification('Profile parameters updated');
@@ -725,11 +839,21 @@ export default function ChatRoom({ currentUser }) {
 
   const handleSavePrivacyConfiguration = async (key, value) => {
     try {
+      if (key === 'privacy_muted' && value === false) {
+        showNotification('Requesting secure web token authentication push channels...', 'success');
+        try {
+          await requestNotificationPermission(currentUser.id); 
+        } catch (fcmErr) {
+          console.warn("FCM registration deferred or blocked:", fcmErr.message);
+        }
+      }
+
       const payload = { [key]: value };
       const { error } = await supabase.from('profiles').update(payload).eq('id', currentUser.id);
       if (error) throw error;
+      
       setMyProfile(prev => ({ ...prev, ...payload }));
-      showNotification('Privacy protection updated');
+      showNotification('Privacy configuration state successfully committed to cloud storage.');
     } catch (err) {
       showNotification('Privacy update failure', 'error');
     }
@@ -817,10 +941,12 @@ export default function ChatRoom({ currentUser }) {
         <div 
           key={room.id}
           onClick={() => { setActiveRoomId(room.id); fetchMessagesForRoom(room.id); setIsViewingInfo(false); }}
+          onContextMenu={(e) => handleRoomContextMenu(e, room.id)}
           style={{
             display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '14px',
             cursor: 'pointer', background: isSelected ? theme.accentLight : 'transparent',
-            transition: 'background 0.15s', marginBottom: '4px'
+            transition: 'background 0.15s, transform 0.1s', marginBottom: '4px', position: 'relative',
+            borderLeft: room.isPinned ? `4px solid ${theme.accent}` : 'none'
           }}
         >
           <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(room.displayName), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontWeight: '700', fontSize: '14px', overflow: 'hidden', flexShrink: 0 }}>
@@ -828,8 +954,17 @@ export default function ChatRoom({ currentUser }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-              <span style={{ fontWeight: '600', fontSize: '15px', color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{room.displayName}</span>
-              <span style={{ fontSize: '11px', color: theme.subText }}>{room.lastMessageTime}</span>
+              <span style={{ fontWeight: '600', fontSize: '15px', color: theme.text, display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {room.displayName}
+                {room.is_bot_channel && (
+                  <FontAwesomeIcon icon={faCertificate} style={{ color: '#007aff', fontSize: '12px' }} title="Verified Official Bot Account" />
+                )}
+              </span>
+              <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                {room.isMuted && <FontAwesomeIcon icon={faVolumeMute} style={{ fontSize: '11px', color: theme.subText }} />}
+                {room.isPinned && <FontAwesomeIcon icon={faThumbtack} style={{ fontSize: '11px', color: theme.accent }} />}
+                <span style={{ fontSize: '11px', color: theme.subText }}>{room.lastMessageTime}</span>
+              </div>
             </div>
             <p style={{ fontSize: '13px', color: theme.subText, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0 }}>{room.lastMessage}</p>
           </div>
@@ -846,7 +981,7 @@ export default function ChatRoom({ currentUser }) {
       { id: 'profile-view', label: 'Profile', icon: faUserCircle, match: ['profile-view', 'edit-profile'] },
       { id: 'settings', label: 'Settings', icon: faGear, match: ['settings', 'privacy', 'help-support', 'private-settings'] }
     ];
-    if (myProfile.role === 'admin' || myProfile.role === 'owner') {
+    if (['admin', 'owner'].includes(myProfile.role)) {
       baseTabs.push({ id: 'admin-dashboard', label: 'Admin', icon: faShieldHalved });
     }
     return baseTabs;
@@ -879,18 +1014,22 @@ export default function ChatRoom({ currentUser }) {
           </div>
 
           <div style={{ textAlign: 'center' }}>
-            <h2 style={{ margin: '0 0 6px 0', fontSize: '24px', fontWeight: '800', color: theme.text }}>
+            <h2 style={{ margin: '0 0 6px 0', fontSize: '24px', fontWeight: '800', color: theme.text, display:'inline-flex', alignItems:'center', gap:'6px' }}>
               {currentActiveRoomData.displayName}
+              {currentActiveRoomData.is_bot_channel && (
+                <FontAwesomeIcon icon={faCertificate} style={{ color: '#007aff', fontSize: '20px' }} />
+              )}
               {!isGroup && targetPersonalProfile && ['admin', 'owner'].includes(targetPersonalProfile.role) && (
-                <FontAwesomeIcon icon={faUserCheck} style={{ marginLeft: '8px', color: theme.adminMark, fontSize: '18px' }} />
+                <FontAwesomeIcon icon={faUserCheck} style={{ color: theme.adminMark, fontSize: '18px' }} />
               )}
             </h2>
+            <br />
             {!isGroup && targetPersonalProfile && <span style={{ color: theme.accent, fontSize: '14px', fontWeight: '600' }}>Token ID: {targetPersonalProfile.unique_id}</span>}
             {isGroup && <span style={{ color: theme.subText, fontSize: '13px' }}>Group Broadcast Channel ({roomMembers.length} members)</span>}
           </div>
 
           <div style={{ display: 'flex', gap: '14px', width: '100%', maxWidth: '400px' }}>
-            <button onClick={() => { setIsViewingInfo(false); setIsSearchingChat(true); }} style={{ flex: 1, padding: '12px', borderRadius: '14px', background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+            <button onClick={() => { setIsViewingInfo(false); setIsSearchingChat(true); }} style={{ flex: 1, padding: '12px', borderRadius: '14px', background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, display: 'flex', flexDirection: 'column', fontStyle: 'normal', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
               <FontAwesomeIcon icon={faSearch} style={{ color: theme.accent, fontSize: '16px' }} /> <span style={{ fontSize: '11px', fontWeight: '700' }}>Search Log</span>
             </button>
             <button onClick={toggleMuteRoom} style={{ flex: 1, padding: '12px', borderRadius: '14px', background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
@@ -962,75 +1101,116 @@ export default function ChatRoom({ currentUser }) {
     );
   };
 
-  // ✅ Isolated Comprehensive Global Admin Dashboard Page View Panel
+  // 📱💻 RE-ENGINEERED RESPONSIVE: Master Superuser Dashboard Configuration Control Array
   const renderAdminDashboard = () => {
     if (!['admin', 'owner'].includes(myProfile.role)) {
       return <div style={{ padding: '24px', color: '#ff3b30', fontWeight: 'bold' }}>Security Alert: Unassigned Cluster Matrix Route. Access Refused.</div>;
     }
 
     return (
-      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', height: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', display: 'flex', flexDirection: 'column', gap: '20px', height: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
         <div style={{ borderBottom: `1px solid ${theme.border}`, paddingBottom: '12px' }}>
-          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '900', color: theme.accent, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <FontAwesomeIcon icon={faShieldHalved} /> Core Management Engine Dashboard
+          <h2 style={{ margin: 0, fontSize: isMobile ? '18px' : '22px', fontWeight: '900', color: theme.accent, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FontAwesomeIcon icon={faShieldHalved} /> Core Management Dashboard
           </h2>
-          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: theme.subText }}>Operational privileges level: Master Superuser Array</p>
+          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: theme.subText }}>Operational privileges level: Master Superuser Array</p>
         </div>
 
-        {/* Maintenance Toggle Cluster Block */}
-        <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h4 style={{ margin: 0, fontSize: '15px', color: theme.text }}>Global App Servers Maintenance Loop</h4>
-              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: theme.subText }}>Activating this drops all connection sockets for non-admin users instantly.</p>
+        {/* Dynamic Multi-Column Grid Layout for Desktop vs Stacked Mobile Viewports */}
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px', width: '100%' }}>
+          
+          {/* Server Loop Controls & Broadcast Card Block */}
+          <div style={{ display:'flex', flexDirection:'column', gap:'20px' }}>
+            {/* Maintenance Toggle Cluster Block */}
+            <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', padding: '16px' }}>
+              <h4 style={{ margin: '0 0 4px 0', fontSize: '15px', color: theme.text }}>Global App Servers Maintenance Loop</h4>
+              <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: theme.subText }}> drops all connection sockets for non-admin users instantly.</p>
+              <button onClick={handleToggleMaintenanceMode} style={{ width: '100%', padding: '12px', background: maintenanceMode ? '#ff3b30' : theme.accent, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
+                <FontAwesomeIcon icon={faWrench} /> {maintenanceMode ? 'Kill Maintenance System' : 'Trigger Active Maintenance'}
+              </button>
             </div>
-            <button onClick={handleToggleMaintenanceMode} style={{ padding: '10px 20px', background: maintenanceMode ? '#ff3b30' : theme.accent, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}>
-              <FontAwesomeIcon icon={faWrench} style={{ marginRight: '6px' }} /> {maintenanceMode ? 'Kill Maintenance' : 'Trigger Maintenance'}
-            </button>
-          </div>
-        </div>
 
-        {/* Official Noti Bot Broadcast Node Engine */}
-        <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <h4 style={{ margin: 0, fontSize: '15px', color: theme.text }}><FontAwesomeIcon icon={faRobot} style={{ marginRight: '6px', color: theme.accent }} /> ItalK Official Noti Bot Broadcast Array</h4>
-            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: theme.subText }}>Transmits an un-replyable system alert notification packet to all server node accounts simultaneously.</p>
-          </div>
-          <textarea value={adminBroadcastText} onChange={e => setAdminBroadcastText(e.target.value)} placeholder="Type official notification packet data stream here..." style={{ width: '100%', height: '80px', padding: '12px', background: theme.bg, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '10px', resize: 'none', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
-          <button onClick={executeGlobalBroadcast} style={{ alignSelf: 'flex-end', padding: '10px 20px', background: '#34c759', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}>
-            <FontAwesomeIcon icon={faBullhorn} style={{ marginRight: '6px' }} /> Dispatch Bot Alert Packet
-          </button>
-        </div>
-
-        {/* Global Cluster User Profiles Registry Ledger */}
-        <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', background: theme.bg, fontSize: '12px', fontWeight: '800', color: theme.subText }}>TOTAL REGISTERED USERS SYSTEM DATA MATRIX ({allProfilesCache.length})</div>
-          <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '300px', overflowY: 'auto' }}>
-            {allProfilesCache.map(u => (
-              <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', borderBottom: `1px solid ${theme.border}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: getRandomColor(u.username), display:'flex', justifyContent:'center', alignItems:'center', color:'#fff', fontWeight:'bold', fontSize:'13px' }}>{u.username?.charAt(0).toUpperCase()}</div>
-                  <div>
-                    <span style={{ fontWeight: '700', color: theme.text }}>{u.username}</span>
-                    <span style={{ fontSize: '11px', color: theme.accent, display: 'block' }}>Role Matrix: {u.role?.toUpperCase()}</span>
-                  </div>
-                </div>
-                {u.id !== currentUser.id && (
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => handleAlterUserGlobalRole(u.id, u.role === 'admin' ? 'member' : 'admin')} style={{ padding: '6px 12px', background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>
-                      {u.role === 'admin' ? 'Demote Member' : 'Make Admin'}
-                    </button>
-                  </div>
-                )}
+            {/* Official Noti Bot Broadcast Node Engine */}
+            <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '15px', color: theme.text }}><FontAwesomeIcon icon={faRobot} style={{ marginRight: '6px', color: theme.accent }} /> ItalK Official Noti Bot Broadcast <FontAwesomeIcon icon={faCertificate} style={{color:'#007aff', fontSize:'13px'}} /></h4>
+                <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: theme.subText }}>Transmits alert notification packets to all server accounts via verified official bot system.</p>
               </div>
-            ))}
+              <textarea value={adminBroadcastText} onChange={e => setAdminBroadcastText(e.target.value)} placeholder="Type official notification packet data stream here..." style={{ width: '100%', height: '90px', padding: '12px', background: theme.bg, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '10px', resize: 'none', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
+              <button onClick={executeGlobalBroadcast} style={{ width: '100%', padding: '12px', background: '#34c759', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
+                <FontAwesomeIcon icon={faBullhorn} /> Dispatch Bot Alert Packet
+              </button>
+            </div>
+          </div>
+
+          {/* User Node Enforcement Hub Block */}
+          <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', padding: '16px', display:'flex', flexDirection:'column', gap:'14px' }}>
+            <div>
+              <h4 style={{ margin: 0, fontSize: '15px', color: theme.text }}><FontAwesomeIcon icon={faUserLock} style={{ marginRight: '6px', color: '#ff9500' }} /> Target Node Enforcement Hub</h4>
+              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: theme.subText }}>
+                {adminSelectedUser ? `Selected Node Target: @${adminSelectedUser.username}` : 'Select a user row from the registry ledger block list below.'}
+              </p>
+            </div>
+
+            {adminSelectedUser && (
+              <div style={{ display:'flex', flexDirection:'column', gap:'12px', borderTop:`1px solid ${theme.border}`, paddingTop:'12px' }}>
+                <form onSubmit={handleIssueUserWarning} style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
+                  <span style={{ fontSize:'12px', fontWeight:'700', color:theme.text }}>Issue Targeted Warning Notice Logs</span>
+                  <div style={{ display:'flex', gap:'8px' }}>
+                    <input type="text" value={adminUserWarningText} onChange={e => setAdminUserWarningText(e.target.value)} placeholder="Type warning description message..." style={{ flex:1, padding:'10px 14px', borderRadius:'10px', border:`1px solid ${theme.border}`, background:theme.bg, color:theme.text, fontSize:'13px', outline:'none' }} />
+                    <button type="submit" style={{ padding:'10px 14px', background:'#ff9500', color:'#fff', border:'none', borderRadius:'10px', fontWeight:'600', cursor:'pointer' }}><FontAwesomeIcon icon={faExclamationTriangle} /></button>
+                  </div>
+                </form>
+
+                <div style={{ display:'flex', flexDirection:'column', gap:'6px', background:theme.bg, padding:'12px', borderRadius:'12px', marginTop:'4px' }}>
+                  <span style={{ fontSize:'12px', fontWeight:'700' }}>Account Restriction Scope Control</span>
+                  <div style={{ display:'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px', margin: '4px 0 8px 0' }}>
+                    {['lifetime', '1day', '7days'].map(dur => (
+                      <label key={dur} style={{ fontSize:'12px', display:'flex', alignItems:'center', gap:'4px', cursor:'pointer' }}>
+                        <input type="radio" name="banDuration" checked={banDuration === dur} onChange={() => setBanDuration(dur)} /> {dur.toUpperCase()}
+                      </label>
+                    ))}
+                  </div>
+                  <button onClick={handleExecuteGlobalBan} style={{ width:'100%', padding:'10px', background:'#ff3b30', color:'#fff', border:'none', borderRadius:'8px', fontWeight:'700', cursor:'pointer' }}>
+                    <FontAwesomeIcon icon={faBan} /> Execute Enforcement Restriction
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        /* Global Cluster User Profiles Registry Ledger */
+        <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', overflow: 'hidden', width:'100%' }}>
+          <div style={{ padding: '14px 18px', background: theme.bg, fontSize: '11px', fontWeight: '800', color: theme.subText }}>TOTAL APP DATABASE REGISTERED MATRIX DATA ({allProfilesCache.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '200px', overflowY: 'auto' }}>
+            {allProfilesCache.map(u => {
+              const isUserTargeted = adminSelectedUser?.id === u.id;
+              return (
+                <div key={u.id} onClick={() => setAdminSelectedUser(u)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', borderBottom: `1px solid ${theme.border}`, cursor:'pointer', background: isUserTargeted ? theme.accentLight : 'transparent' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '34px', height: '36px', borderRadius: '50%', background: getRandomColor(u.username), display:'flex', justifyContent:'center', alignItems:'center', color:'#fff', fontWeight:'bold', fontSize:'13px' }}>{u.username?.charAt(0).toUpperCase()}</div>
+                    <div>
+                      <span style={{ fontWeight: '700', color: theme.text }}>{u.username}</span>
+                      <span style={{ fontSize: '11px', color: u.role?.startsWith('banned') ? '#ff3b30' : theme.accent, display: 'block' }}>Role Status: {u.role?.toUpperCase()}</span>
+                    </div>
+                  </div>
+                  {u.id !== currentUser.id && (
+                    <div onClick={e => e.stopPropagation()}>
+                      <button onClick={() => handleAlterUserGlobalRole(u.id, u.role === 'admin' ? 'member' : 'admin')} style={{ padding: '6px 12px', background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight:'600' }}>
+                        {u.role === 'admin' ? 'Demote' : 'Make Admin'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
     );
   };
 
-  // ✅ Trigger Maintenance Screen Overlay Grid if Activated for non-admins
   if (maintenanceMode && !['admin', 'owner'].includes(myProfile.role)) {
     return (
       <div style={{ width: '100vw', height: '100vh', background: '#0c0c0e', color: '#f3f4f6', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: '-apple-system, sans-serif', padding: '20px', boxSizing: 'border-box', textAlign: 'center' }}>
@@ -1044,6 +1224,11 @@ export default function ChatRoom({ currentUser }) {
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', background: theme.bg, color: theme.text, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', overflow: 'hidden', position: 'relative' }}>
       
+      {/* Global Interface Background Dismiss Overlay Matrix Trigger Click Control */}
+      {(activeMenuMessageId || activeMenuRoomId) && (
+        <div style={{ position:'fixed', top:0, left:0, width:'100vw', height:'100vh', zIndex:9980, background:'transparent' }} onClick={() => { setActiveMenuMessageId(null); setActiveMenuRoomId(null); }} />
+      )}
+
       {/* Toast Overlay Banner Element */}
       <div style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 99999, display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <AnimatePresence>
@@ -1055,6 +1240,33 @@ export default function ChatRoom({ currentUser }) {
           ))}
         </AnimatePresence>
       </div>
+
+      {/* NEW FEATURE: Chat List Item Options Press Context Menu Architecture Overlay */}
+      <AnimatePresence>
+        {activeMenuRoomId && (
+          <div style={{ position: 'fixed', top: roomMenuPosition.y, left: roomMenuPosition.x, background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '14px', padding: '6px', width: '160px', boxShadow: '0 12px 32px rgba(0,0,0,0.3)', zIndex: 9991, display:'flex', flexDirection:'column', gap:'2px' }}>
+            {(() => {
+              const targetMenuRoom = rooms.find(r => r.id === activeMenuRoomId);
+              if (!targetMenuRoom) return null;
+              return (
+                <>
+                  <button onClick={() => togglePinRoomState(targetMenuRoom.id, targetMenuRoom.isPinned)} style={{ background: 'none', border: 'none', color: theme.text, padding: '10px 12px', borderRadius: '8px', textAlign: 'left', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width:'100%' }}>
+                    <FontAwesomeIcon icon={faThumbtack} style={{ width: '14px', color: theme.accent }} /> {targetMenuRoom.isPinned ? 'Unpin Room Chat' : 'Pin Room Chat'}
+                  </button>
+                  <button onClick={() => toggleMuteRoomState(targetMenuRoom.id, targetMenuRoom.isMuted)} style={{ background: 'none', border: 'none', color: theme.text, padding: '10px 12px', borderRadius: '8px', textAlign: 'left', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width:'100%' }}>
+                    <FontAwesomeIcon icon={targetMenuRoom.isMuted ? faVolumeUp : faVolumeMute} style={{ width: '14px', color:'#ff9500' }} /> {targetMenuRoom.isMuted ? 'Unmute Alerts' : 'Mute Room Alerts'}
+                  </button>
+                  {targetMenuRoom.type === 'group' && (
+                    <button onClick={() => { setActiveRoomId(targetMenuRoom.id); executeLeaveRoom(); }} style={{ background: 'none', border: 'none', color: '#ff3b30', padding: '10px 12px', borderRadius: '8px', textAlign: 'left', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width:'100%' }}>
+                      <FontAwesomeIcon icon={faSignOutAlt} style={{ width: '14px' }} /> Leave Channel Hub
+                    </button>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Context Menu Blur Filter Overlayer Matrix */}
       <AnimatePresence>
@@ -1190,7 +1402,6 @@ export default function ChatRoom({ currentUser }) {
                   <button onClick={handleCreateGroup} style={{ width: '100%', padding: '12px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '14px' }}>Deploy Group</button>
                 </div>
               )}
-      
 
               {currentTab === 'profile-view' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '4px' }}>
@@ -1258,57 +1469,87 @@ export default function ChatRoom({ currentUser }) {
                 </div>
               )}
 
+              {/* ==================== GLOBAL SETTINGS TAB PANEL RE-ENGINEERED ==================== */}
               {currentTab === 'settings' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '12px', borderBottom: `1px solid ${theme.border}` }}>
-                    <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(myProfile.username), display:'flex', justifyContent:'center', alignItems:'center', color:'#fff', fontWeight:'bold' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px', background: theme.bg, borderRadius: '16px', border: `1px solid ${theme.border}` }}>
+                    <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: getRandomColor(myProfile.username), display:'flex', justifyContent:'center', alignItems:'center', color:'#fff', fontWeight:'bold', fontSize:'16px' }}>
                       {myProfile.avatar_url ? <img src={myProfile.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%' }} /> : myProfile.username?.charAt(0).toUpperCase()}
                     </div>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '15px' }}>{myProfile.username}</h4>
-                      <p style={{ margin: 0, fontSize: '11px', color: theme.subText }}>{currentUser.email}</p>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{myProfile.username}</h4>
+                      <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: theme.subText, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentUser.email}</p>
                     </div>
                   </div>
-                  <button onClick={() => setCurrentTab('private-settings')} style={{ width: '100%', padding: '12px', background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '12px', color: theme.text, fontWeight: '600', textAlign: 'left', cursor: 'pointer' }}><FontAwesomeIcon icon={faUserGear} style={{ marginRight: '8px', color: theme.accent }} /> Private Security Isolation Settings</button>
-                  <button onClick={() => setCurrentTab('help-support')} style={{ width: '100%', padding: '12px', background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '12px', color: theme.text, fontWeight: '600', textAlign: 'left', cursor: 'pointer' }}><FontAwesomeIcon icon={faCircleInfo} style={{ marginRight: '8px', color: theme.accent }} /> Help & Support Documentation</button>
-                  <button onClick={() => setDarkMode(!darkMode)} style={{ width: '100%', padding: '12px', background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '12px', color: theme.text, fontWeight: '600', textAlign: 'left', cursor: 'pointer', display:'flex', justifyContent:'space-between' }}><span><FontAwesomeIcon icon={darkMode ? faSun : faMoon} style={{ marginRight: '8px', color: '#ff9500' }} /> Interface Theme Mode</span><span style={{ fontSize:'11px', color:theme.subText }}>{darkMode ? 'DARK' : 'LIGHT'}</span></button>
-                  <button onClick={() => supabase.auth.signOut()} style={{ width: '100%', padding: '12px', background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.2)', borderRadius: '12px', color: '#ff3b30', fontWeight: '700', cursor: 'pointer', marginTop: '12px' }}><FontAwesomeIcon icon={faSignOutAlt} /> Disconnect Active Sockets</button>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: theme.card, borderRadius: '16px', border: `1px solid ${theme.border}`, padding: '6px' }}>
+                    <button onClick={() => setCurrentTab('private-settings')} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.2s' }}>
+                      <FontAwesomeIcon icon={faUserGear} style={{ color: theme.accent, width: '18px' }} /> Private Security & Notifications Setup
+                    </button>
+                    <button onClick={() => setCurrentTab('help-support')} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.2s' }}>
+                      <FontAwesomeIcon icon={faCircleInfo} style={{ color: theme.accent, width: '18px' }} /> Core Support Documentation
+                    </button>
+                    <button onClick={() => setDarkMode(!darkMode)} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.2s' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <FontAwesomeIcon icon={darkMode ? faSun : faMoon} style={{ color: '#ff9500', width: '18px' }} /> Interface Theme Matrix Mode
+                      </span>
+                      <span style={{ fontSize: '11px', fontWeight: '800', background: theme.bg, padding: '4px 8px', borderRadius: '6px', color: theme.subText }}>{darkMode ? 'DARK' : 'LIGHT'}</span>
+                    </button>
+                  </div>
+
+                  <div style={{ background: 'rgba(255,59,48,0.04)', border: '1px solid rgba(255,59,48,0.1)', borderRadius: '16px', padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <button onClick={() => supabase.auth.signOut()} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: '#ff3b30', fontWeight: '700', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <FontAwesomeIcon icon={faSignOutAlt} /> Disconnect Cloud Socket Sreams
+                    </button>
+                  </div>
                 </div>
               )}
 
+              {/* ==================== PRIVACY & NOTIFICATION MANAGEMENT SETUP ==================== */}
               {currentTab === 'private-settings' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: theme.accent, cursor: 'pointer' }} onClick={() => setCurrentTab('settings')}>
-                    <FontAwesomeIcon icon={faArrowLeft} /> <span style={{ fontSize: '13px', fontWeight: '700' }}>Back to Menu Control</span>
+                    <FontAwesomeIcon icon={faArrowLeft} /> <span style={{ fontSize: '13px', fontWeight: '700' }}>Back to Configuration Menu</span>
                   </div>
-                  <h4 style={{ margin: 0, fontSize: '14px', textTransform: 'uppercase', color: theme.subText }}>Privacy Visibility Matrix</h4>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13.5px', fontWeight: '600' }}><FontAwesomeIcon icon={faVolumeMute} style={{ marginRight: '8px', color: theme.subText }} /> Silence System Notification</span>
-                    <input type="checkbox" checked={myProfile.privacy_muted || false} onChange={e => handleSavePrivacyConfiguration('privacy_muted', e.target.checked)} style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: theme.accent }} />
+                  
+                  {/* Strict Push Notification Logic Toggle Controls */}
+                  <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '14px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h4 style={{ margin: 0, fontSize: '12px', fontWeight: '800', color: theme.accent, textTransform: 'uppercase' }}>Alert Dispatch Configurations</h4>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span style={{ fontSize: '13.5px', fontWeight: '600' }}><FontAwesomeIcon icon={faVolumeMute} style={{ marginRight: '6px', color: theme.subText }} /> Silence Out-App Push Notifications</span>
+                        <p style={{ margin: 0, fontSize: '11px', color: theme.subText }}>Toggling this ON completely isolates and drops native push streams.</p>
+                      </div>
+                      <input type="checkbox" checked={myProfile.privacy_muted || false} onChange={e => handleSavePrivacyConfiguration('privacy_muted', e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: theme.accent }} />
+                    </div>
                   </div>
+
+                  <h4 style={{ margin: '8px 0 0 0', fontSize: '12px', textTransform: 'uppercase', color: theme.subText, fontWeight:'800' }}>Privacy Visibility Matrix</h4>
                   {['privacy_profile', 'privacy_bio', 'privacy_birthday'].map(field => (
                     <div key={field} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <span style={{ fontSize: '12px', fontWeight: '700', textTransform: 'capitalize', color: theme.text }}>{field.replace('privacy_', '')} Publicity Isolation Level</span>
-                      <select value={myProfile[field] || 'public'} onChange={e => handleSavePrivacyConfiguration(field, e.target.value)} style={{ padding: '8px 12px', background: theme.background, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '10px', fontSize: '12px', outline: 'none' }}>
+                      <select value={myProfile[field] || 'public'} onChange={e => handleSavePrivacyConfiguration(field, e.target.value)} style={{ padding: '10px 12px', background: theme.card, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '10px', fontSize: '13px', outline: 'none' }}>
                         <option value="public">Public Node Broadcast</option>
                         <option value="only_me">Isolated Locked Mode (Only Me)</option>
                       </select>
                     </div>
                   ))}
-                  <hr style={{ border: 'none', height: '1px', background: theme.border }} />
+                  
+                  <hr style={{ border: 'none', height: '1px', background: theme.border, margin:'8px 0' }} />
                   <form onSubmit={handlePasswordChangeSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <span style={{ fontSize: '12px', fontWeight: '700', color: theme.subText }}>ROTATE ACCESS CREDENTIALS</span>
-                    <input type="password" placeholder="New structural password..." value={newPassword} onChange={e => setNewPassword(e.target.value)} style={{ padding: '10px', borderRadius: '10px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '13px' }} />
+                    <input type="password" placeholder="New structural password security key..." value={newPassword} onChange={e => setNewPassword(e.target.value)} style={{ padding: '10px 12px', borderRadius: '10px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '13px', outline:'none' }} />
                     <button type="submit" style={{ padding: '10px', background: theme.accent, border: 'none', color: '#fff', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' }}>Rotate Password Key</button>
                     <button type="button" onClick={handleForgotPasswordTrigger} style={{ background: 'none', border: 'none', color: theme.accent, fontSize: '12px', textAlign: 'left', cursor: 'pointer', padding: '4px 0' }}><FontAwesomeIcon icon={faLock} /> Transmit Recovery Link Token</button>
                   </form>
-                  <hr style={{ border: 'none', height: '1px', background: theme.border }} />
+
+                  <hr style={{ border: 'none', height: '1px', background: theme.border, margin:'8px 0' }} />
                   <form onSubmit={handleSendFeedback} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <span style={{ fontSize: '12px', fontWeight: '700', color: theme.subText }}><FontAwesomeIcon icon={faCommentDots} /> SUBMIT RECURSIVE FEEDBACK REPORT</span>
-                    <textarea value={feedbackText} onChange={e => setFeedbackText(e.target.value)} placeholder="Type feedback anomalies..." style={{ padding: '10px', background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '10px', color: theme.text, fontSize: '13px', height: '60px', resize: 'none' }} />
+                    <textarea value={feedbackText} onChange={e => setFeedbackText(e.target.value)} placeholder="Type feedback anomalies..." style={{ padding: '10px', background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '10px', color: theme.text, fontSize: '13px', height: '60px', resize: 'none', outline:'none' }} />
                     <button type="submit" style={{ padding: '10px', background: theme.accent, border: 'none', color: '#fff', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' }}>Dispatch Telemetry Report</button>
                   </form>
-                  <button onClick={executeDeleteAccount} style={{ width: '100%', padding: '12px', background: 'rgba(255,59,48,0.12)', border: '1px solid rgba(255,59,48,0.2)', color: '#ff3b30', borderRadius: '12px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', marginTop: '10px' }}><FontAwesomeIcon icon={faTrash} /> Delete Account permanently</button>
+                  <button onClick={executeDeleteAccount} style={{ width: '100%', padding: '12px', background: 'rgba(255,59,48,0.12)', border: '1px solid rgba(255,59,48,0.2)', color: '#ff3b30', borderRadius: '12px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', marginTop: '10px' }}>Delete Account permanently</button>
                 </div>
               )}
 
@@ -1318,7 +1559,7 @@ export default function ChatRoom({ currentUser }) {
                     <FontAwesomeIcon icon={faArrowLeft} /> <span style={{ fontSize: '13px', fontWeight: '700' }}>Back to Configuration Menu</span>
                   </div>
                   <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800' }}><FontAwesomeIcon icon={faCircleInfo} /> Support Center & Engine Documentation</h4>
-                  <div style={{ background: theme.background, padding: '14px', borderRadius: '14px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px', lineHeight: '1.5' }}>
+                  <div style={{ background: theme.card, padding: '14px', borderRadius: '14px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px', lineHeight: '1.5' }}>
                     <div>
                       <strong style={{ color: theme.text }}>Real-time Synchronizer System</strong>
                       <p style={{ margin: '2px 0 0 0', color: theme.subText }}>Imaginary talK updates pipelines recursively across high-fidelity WebSocket streams mapped inside Supabase channel protocols.</p>
@@ -1344,10 +1585,13 @@ export default function ChatRoom({ currentUser }) {
                         {currentActiveRoomData.displayAvatar && currentActiveRoomData.displayAvatar !== "" ? <img src={currentActiveRoomData.displayAvatar} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : currentActiveRoomData.displayName?.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: theme.text }}>
+                        <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: theme.text, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                           {currentActiveRoomData.displayName}
+                          {currentActiveRoomData.is_bot_channel && (
+                            <FontAwesomeIcon icon={faCertificate} style={{ color: '#007aff', fontSize: '13px' }} />
+                          )}
                           {currentActiveRoomData.type === 'personal' && targetPersonalProfile && ['admin', 'owner'].includes(targetPersonalProfile.role) && (
-                            <FontAwesomeIcon icon={faUserCheck} style={{ marginLeft: '6px', color: theme.adminMark, fontSize: '13px' }} />
+                            <FontAwesomeIcon icon={faUserCheck} style={{ color: theme.adminMark, fontSize: '13px' }} />
                           )}
                         </h4>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: theme.subText, marginTop: '2px' }}>
@@ -1407,6 +1651,7 @@ export default function ChatRoom({ currentUser }) {
                     {filteredMessages.map((msg) => {
                       const isMe = msg.sender_id === currentUser.id;
                       const isChosen = selectedMessages.includes(msg.id);
+                      const replyTimeNode = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                       const replyParentMsg = msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id) : null;
                       return (
                         <div key={msg.id} onContextMenu={(e) => handleMsgContextMenu(e, msg)} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '8px', width: '100%' }}>
@@ -1434,10 +1679,13 @@ export default function ChatRoom({ currentUser }) {
                               {msg.profiles?.avatar_url && msg.profiles.avatar_url !== "" ? <img src={msg.profiles.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : (msg.profiles?.username?.charAt(0).toUpperCase() || 'S')}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
-                              <span style={{ fontSize: '11px', color: theme.subText, marginBottom: '2px', padding: '0 4px', cursor:'pointer' }} onClick={() => setIsViewingInfo(true)}>
-                                {msg.profiles?.username || "ItalK Noti Bot"}
+                              <span style={{ fontSize: '11px', color: theme.subText, marginBottom: '2px', padding: '0 4px', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:'4px' }} onClick={() => setIsViewingInfo(true)}>
+                                {msg.profiles?.username || "ItalK Official Noti Bot"}
+                                {msg.is_bot_generated && (
+                                  <FontAwesomeIcon icon={faCertificate} style={{ color: '#007aff', fontSize: '11px' }} />
+                                )}
                                 {msg.profiles && ['admin', 'owner'].includes(msg.profiles.role) && (
-                                  <FontAwesomeIcon icon={faUserCheck} style={{ marginLeft: '4px', color: theme.adminMark, fontSize: '10px' }} />
+                                  <FontAwesomeIcon icon={faUserCheck} style={{ color: theme.adminMark, fontSize: '10px' }} />
                                 )}
                               </span>
                               
@@ -1452,7 +1700,7 @@ export default function ChatRoom({ currentUser }) {
                                 {renderMessageContent(msg.content)}
                                 {msg.is_pinned && <FontAwesomeIcon icon={faThumbtack} style={{ position: 'absolute', top: '-6px', right: '-6px', fontSize: '10px', color: theme.accent, background: theme.card, padding: '3px', borderRadius: '50%' }} />}
                               </div>
-                              <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '2px', padding: '0 4px' }}>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '2px', padding: '0 4px' }}>{replyTimeNode}</span>
                             </div>
                           </motion.div>
                         </div>
@@ -1538,9 +1786,9 @@ export default function ChatRoom({ currentUser }) {
                   {searchResults.map(u => (
                     <div key={u.id} onClick={() => openPersonalChat(u)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', background: theme.card, borderBottom: `1px solid ${theme.border}`, borderRadius: '14px', marginBottom: '6px' }}>
                       <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: getRandomColor(u.username), display:'flex', alignItems:'center', justifyContent:'center', color:'white' }}>{u.username?.charAt(0).toUpperCase()}</div>
-                      <span style={{ fontWeight: '600' }}>
+                      <span style={{ fontWeight: '600', display:'inline-flex', alignItems:'center', gap:'4px' }}>
                         {u.username}
-                        {['admin', 'owner'].includes(u.role) && <FontAwesomeIcon icon={faUserCheck} style={{ marginLeft: '6px', color: theme.adminMark, fontSize: '12px' }} />}
+                        {['admin', 'owner'].includes(u.role) && <FontAwesomeIcon icon={faUserCheck} style={{ color: theme.adminMark, fontSize: '12px' }} />}
                       </span>
                     </div>
                   ))}
@@ -1611,11 +1859,12 @@ export default function ChatRoom({ currentUser }) {
               </div>
             )}
 
+            {/* MOBILE SETTINGS ROUTER & PRIVACY LAYOUT */}
             {!activeRoomId && currentTab === 'settings' && (
               <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <span style={{ fontSize: '22px', fontWeight: '800' }}>Settings & Privacy Sub-routine</span>
+                <span style={{ fontSize: '22px', fontWeight: '800' }}>Settings & Privacy Node</span>
                 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '12px', borderBottom: `1px solid ${theme.border}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px', background: theme.card, borderRadius: '16px', border: `1px solid ${theme.border}` }}>
                   <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(myProfile.username), display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:'bold' }}>
                     {myProfile.avatar_url ? <img src={myProfile.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%' }} /> : myProfile.username?.charAt(0).toUpperCase()}
                   </div>
@@ -1626,7 +1875,7 @@ export default function ChatRoom({ currentUser }) {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: theme.card, padding: '16px', borderRadius: '16px', border: `1px solid ${theme.border}` }}>
-                  <h4 style={{ margin: 0, fontSize: '14px', color: theme.accent, textTransform: 'uppercase', fontWeight: '800' }}>Private Isolation Settings</h4>
+                  <h4 style={{ margin: 0, fontSize: '12px', color: theme.accent, textTransform: 'uppercase', fontWeight: '800' }}>Private Isolation Settings</h4>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '13.5px', fontWeight: '600' }}><FontAwesomeIcon icon={faVolumeMute} style={{ marginRight: '8px' }} /> Silence Notification Alerts</span>
                     <input type="checkbox" checked={myProfile.privacy_muted || false} onChange={e => handleSavePrivacyConfiguration('privacy_muted', e.target.checked)} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
@@ -1648,9 +1897,9 @@ export default function ChatRoom({ currentUser }) {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <button onClick={() => { setDarkMode(!darkMode); showNotification('Theme variable toggled'); }} style={{ padding: '14px', borderRadius: '12px', background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: '700' }}><FontAwesomeIcon icon={darkMode ? faSun : faMoon} /> Switch Display Alignment</button>
-                  <button onClick={async () => { await supabase.auth.signOut(); window.location.reload(); }} style={{ padding: '14px', borderRadius: '12px', background: theme.accent, color: '#fff', fontWeight: '700', border: 'none' }}>Disconnect Socket</button>
-                  <button onClick={executeDeleteAccount} style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.2)', color: '#ff3b30', fontWeight: '700' }}>Terminate Profile Account</button>
+                  <button onClick={() => { setDarkMode(!darkMode); showNotification('Theme variable toggled'); }} style={{ padding: '14px', borderRadius: '12px', background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: '700', cursor:'pointer' }}><FontAwesomeIcon icon={darkMode ? faSun : faMoon} /> Switch Display Alignment</button>
+                  <button onClick={async () => { await supabase.auth.signOut(); window.location.reload(); }} style={{ padding: '14px', borderRadius: '12px', background: theme.accent, color: '#fff', fontWeight: '700', border: 'none', cursor:'pointer' }}>Disconnect Socket</button>
+                  <button onClick={executeDeleteAccount} style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.2)', color: '#ff3b30', fontWeight: '700', cursor:'pointer' }}>Terminate Profile Account</button>
                 </div>
               </div>
             )}
@@ -1669,10 +1918,13 @@ export default function ChatRoom({ currentUser }) {
                       {currentActiveRoomData.displayAvatar && currentActiveRoomData.displayAvatar !== "" ? <img src={currentActiveRoomData.displayAvatar} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : currentActiveRoomData.displayName?.charAt(0).toUpperCase()}
                     </div>
                     <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setIsViewingInfo(true)}>
-                      <h4 style={{ margin: 0, fontSize: '13.5px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <h4 style={{ margin: 0, fontSize: '13.5px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display:'inline-flex', alignItems:'center', gap:'4px' }}>
                         {currentActiveRoomData.displayName}
+                        {currentActiveRoomData.is_bot_channel && (
+                          <FontAwesomeIcon icon={faCertificate} style={{ color: '#007aff', fontSize: '12px' }} />
+                        )}
                         {currentActiveRoomData.type === 'personal' && targetPersonalProfile && ['admin', 'owner'].includes(targetPersonalProfile.role) && (
-                          <FontAwesomeIcon icon={faUserCheck} style={{ marginLeft: '6px', color: theme.adminMark, fontSize: '12px' }} />
+                          <FontAwesomeIcon icon={faUserCheck} style={{ color: theme.adminMark, fontSize: '12px' }} />
                         )}
                       </h4>
                       <div style={{ fontSize: '10px', color: '#34c759', fontWeight: 'bold' }}>Click for profile info</div>
@@ -1699,9 +1951,7 @@ export default function ChatRoom({ currentUser }) {
                       const nestedReply = msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id) : null;
                       return (
                         <div key={msg.id} onContextMenu={(e) => handleMsgContextMenu(e, msg)} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '8px', width: '100%' }}>
-                          
-                          {/* Gesture Tracks Swipe to Reply integration on Mobile bubbles */}
-                          <motion.div 
+                          <motion.div
                             drag="x"
                             dragConstraints={{ left: 0, right: 50 }}
                             onDragEnd={(e, info) => {
@@ -1717,10 +1967,13 @@ export default function ChatRoom({ currentUser }) {
                               {msg.profiles?.avatar_url && msg.profiles.avatar_url !== "" ? <img src={msg.profiles.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : (msg.profiles?.username?.charAt(0).toUpperCase() || 'S')}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
-                              <span style={{ fontSize: '11px', color: theme.subText, marginBottom: '2px', padding: '0 4px', cursor:'pointer' }} onClick={() => setIsViewingInfo(true)}>
+                              <span style={{ fontSize: '11px', color: theme.subText, marginBottom: '2px', padding: '0 4px', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:'4px' }} onClick={() => setIsViewingInfo(true)}>
                                 {msg.profiles?.username || "ItalK Official Bot"}
+                                {msg.is_bot_generated && (
+                                  <FontAwesomeIcon icon={faCertificate} style={{ color: '#007aff', fontSize: '10px' }} />
+                                )}
                                 {msg.profiles && ['admin', 'owner'].includes(msg.profiles.role) && (
-                                  <FontAwesomeIcon icon={faUserCheck} style={{ marginLeft: '4px', color: theme.adminMark, fontSize: '10px' }} />
+                                  <FontAwesomeIcon icon={faUserCheck} style={{ color: theme.adminMark, fontSize: '10px' }} />
                                 )}
                               </span>
                               {nestedReply && (
