@@ -412,7 +412,7 @@ export default function ChatRoom({ currentUser }) {
 
       if (msgError) throw msgError;
       setMessages(msgData || []);
-      状况(() => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' }), 30);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' }), 30);
     } catch (err) {
       showNotification('Failed loading message history', 'error');
     }
@@ -1964,7 +1964,7 @@ export default function ChatRoom({ currentUser }) {
                   <div style={{ position: 'absolute', bottom: '10px', left: '10px', right: '10px', background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '18px', padding: '8px', border: `1px solid ${theme.border}`, zIndex: 510, boxShadow: theme.shadow, display: 'flex', flexDirection: 'column' }}>
                     {replyTarget && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', background: theme.bg, padding: '6px 12px', fontSize: '11px', borderRadius: '8px', marginBottom: '4px' }}>
-                        <span>Replying payload text trace...</span>
+                        <span>Replying to {replyTarget.user?.username || 'User'}</span>
                         <FontAwesomeIcon icon={faXmark} onClick={() => setReplyTarget(null)} />
                       </div>
                     )}
