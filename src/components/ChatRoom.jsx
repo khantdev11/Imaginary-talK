@@ -346,14 +346,14 @@ export default function ChatRoom({ currentUser }) {
 
         if (room.is_bot_channel || room.name === 'ItalK Official Noti Bot') {
           roomTitle = "ItalK Official Noti Bot";
-          roomAvatar = "https://img-url1.netlify.app/Italklogo";
+          roomAvatar = "https://img-url1.netlify.app/imaginary";
         } else if (room.type === 'personal') {
           const alternateMember = room.room_members?.find(m => m.user_id !== currentUser.id);
           if (alternateMember && alternateMember.profiles) {
             roomTitle = alternateMember.profiles.username;
             roomAvatar = alternateMember.profiles.privacy_profile === 'public' || alternateMember.user_id === currentUser.id
               ? alternateMember.profiles.avatar_url 
-              : 'https://img-url1.netlify.app/default';
+              : 'https://img-url1.netlify.app/imaginary';
           } else {
             roomTitle = 'Saved Chat';
           }
