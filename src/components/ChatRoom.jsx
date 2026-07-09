@@ -69,7 +69,7 @@ export default function ChatRoom({ currentUser }) {
   const [adminBroadcastText, setAdminBroadcastText] = useState('');
   const [adminSelectedUser, setAdminSelectedUser] = useState(null);
   const [adminUserWarningText, setAdminUserWarningText] = useState('');
-  const [banDuration, setBanDuration] = useState('lifetime'); // 'lifetime', '1day', '7days'
+  const [banDuration, setBanDuration] = useState('lifetime'); 
 
   // Feedback & Security Temporary Inputs State
   const [feedbackText, setFeedbackText] = useState('');
@@ -134,7 +134,6 @@ export default function ChatRoom({ currentUser }) {
     }, 2500);
   };
 
-  // Trigger Out-of-App Push Notification Module (Strictly checks privacy_muted toggle)
   const triggerPushNotification = (title, bodyContext) => {
     if (myProfileRef.current?.privacy_muted === true) {
       return; 
@@ -164,7 +163,6 @@ export default function ChatRoom({ currentUser }) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Synchronize System Settings (Maintenance Streams)
   useEffect(() => {
     const fetchMaintenanceStatus = async () => {
       const { data, error } = await supabase.from('system_settings').select('*').eq('key', 'maintenance_mode').maybeSingle();
@@ -262,7 +260,6 @@ export default function ChatRoom({ currentUser }) {
         setMyProfile(insertedData);
         syncEditStates(insertedData);
 
-        // Deploy Automatic Bot Welcome Message Route Matrix
         await handleBotWelcomeGreeting(insertedData);
       } else {
         setMyProfile(data);
@@ -349,7 +346,7 @@ export default function ChatRoom({ currentUser }) {
 
         if (room.is_bot_channel || room.name === 'ItalK Official Noti Bot') {
           roomTitle = "ItalK Official Noti Bot";
-          roomAvatar = "https://images.unsplash.com/photo-1546776310-eef45dd6d63c?w=150&h=150&fit=crop";
+          roomAvatar = "https://img-url1.netlify.app/Italklogo";
         } else if (room.type === 'personal') {
           const alternateMember = room.room_members?.find(m => m.user_id !== currentUser.id);
           if (alternateMember && alternateMember.profiles) {
@@ -415,7 +412,7 @@ export default function ChatRoom({ currentUser }) {
 
       if (msgError) throw msgError;
       setMessages(msgData || []);
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' }), 30);
+      状况(() => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' }), 30);
     } catch (err) {
       showNotification('Failed loading message history', 'error');
     }
@@ -1115,12 +1112,8 @@ export default function ChatRoom({ currentUser }) {
           <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: theme.subText }}>Operational privileges level: Master Superuser Array</p>
         </div>
 
-        {/* Dynamic Multi-Column Grid Layout for Desktop vs Stacked Mobile Viewports */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px', width: '100%' }}>
-          
-          {/* Server Loop Controls & Broadcast Card Block */}
           <div style={{ display:'flex', flexDirection:'column', gap:'20px' }}>
-            {/* Maintenance Toggle Cluster Block */}
             <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', padding: '16px' }}>
               <h4 style={{ margin: '0 0 4px 0', fontSize: '15px', color: theme.text }}>Global App Servers Maintenance Loop</h4>
               <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: theme.subText }}> drops all connection sockets for non-admin users instantly.</p>
@@ -1129,7 +1122,6 @@ export default function ChatRoom({ currentUser }) {
               </button>
             </div>
 
-            {/* Official Noti Bot Broadcast Node Engine */}
             <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
                 <h4 style={{ margin: 0, fontSize: '15px', color: theme.text }}><FontAwesomeIcon icon={faRobot} style={{ marginRight: '6px', color: theme.accent }} /> ItalK Official Noti Bot Broadcast <FontAwesomeIcon icon={faCertificate} style={{color:'#007aff', fontSize:'13px'}} /></h4>
@@ -1142,7 +1134,6 @@ export default function ChatRoom({ currentUser }) {
             </div>
           </div>
 
-          {/* User Node Enforcement Hub Block */}
           <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', padding: '16px', display:'flex', flexDirection:'column', gap:'14px' }}>
             <div>
               <h4 style={{ margin: 0, fontSize: '15px', color: theme.text }}><FontAwesomeIcon icon={faUserLock} style={{ marginRight: '6px', color: '#ff9500' }} /> Target Node Enforcement Hub</h4>
@@ -1179,7 +1170,6 @@ export default function ChatRoom({ currentUser }) {
           </div>
         </div>
 
-        {/* Global Cluster User Profiles Registry Ledger */}
         <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', overflow: 'hidden', width:'100%' }}>
           <div style={{ padding: '14px 18px', background: theme.bg, fontSize: '11px', fontWeight: '800', color: theme.subText }}>TOTAL APP DATABASE REGISTERED MATRIX DATA ({allProfilesCache.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '200px', overflowY: 'auto' }}>
@@ -1223,12 +1213,10 @@ export default function ChatRoom({ currentUser }) {
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', background: theme.bg, color: theme.text, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', overflow: 'hidden', position: 'relative' }}>
       
-      {/* Global Interface Background Dismiss Overlay Matrix Trigger Click Control */}
       {(activeMenuMessageId || activeMenuRoomId) && (
         <div style={{ position:'fixed', top:0, left:0, width:'100vw', height:'100vh', zIndex:9980, background:'transparent' }} onClick={() => { setActiveMenuMessageId(null); setActiveMenuRoomId(null); }} />
       )}
 
-      {/* Toast Overlay Banner Element */}
       <div style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 99999, display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <AnimatePresence>
           {notifications.map(n => (
@@ -1240,7 +1228,6 @@ export default function ChatRoom({ currentUser }) {
         </AnimatePresence>
       </div>
 
-      {/* NEW FEATURE: Chat List Item Options Press Context Menu Architecture Overlay */}
       <AnimatePresence>
         {activeMenuRoomId && (
           <div style={{ position: 'fixed', top: roomMenuPosition.y, left: roomMenuPosition.x, background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '14px', padding: '6px', width: '160px', boxShadow: '0 12px 32px rgba(0,0,0,0.3)', zIndex: 9991, display:'flex', flexDirection:'column', gap:'2px' }}>
@@ -1267,7 +1254,6 @@ export default function ChatRoom({ currentUser }) {
         )}
       </AnimatePresence>
 
-      {/* Context Menu Blur Filter Overlayer Matrix */}
       <AnimatePresence>
         {activeMenuMessageId && (
           <motion.div 
@@ -1315,11 +1301,8 @@ export default function ChatRoom({ currentUser }) {
         )}
       </AnimatePresence>
 
-      {/* DESKTOP FULL-SCREEN SPLIT CONTROLLER LAYER */}
       {!isMobile && (
         <div style={{ width: '100%', height: '100%', display: 'flex' }}>
-          
-          {/* Side Drawer Column */}
           <div style={{ width: '380px', height: '100%', borderRight: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', background: theme.card }}>
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', borderBottom: `1px solid ${theme.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1468,7 +1451,6 @@ export default function ChatRoom({ currentUser }) {
                 </div>
               )}
 
-              {/* ==================== GLOBAL SETTINGS TAB PANEL RE-ENGINEERED ==================== */}
               {currentTab === 'settings' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px', background: theme.bg, borderRadius: '16px', border: `1px solid ${theme.border}` }}>
@@ -1486,7 +1468,7 @@ export default function ChatRoom({ currentUser }) {
                       <FontAwesomeIcon icon={faUserGear} style={{ color: theme.accent, width: '18px' }} /> Private Security & Notifications Setup
                     </button>
                     <button onClick={() => setCurrentTab('help-support')} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.2s' }}>
-                      <FontAwesomeIcon icon={faCircleInfo} style={{ color: theme.accent, width: '18px' }} /> Private Security & Notifications Setup
+                      <FontAwesomeIcon icon={faCircleInfo} style={{ color: theme.accent, width: '18px' }} /> Support Matrix Configuration Info
                     </button>
                     <button onClick={() => setDarkMode(!darkMode)} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.2s' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1498,20 +1480,18 @@ export default function ChatRoom({ currentUser }) {
 
                   <div style={{ background: 'rgba(255,59,48,0.04)', border: '1px solid rgba(255,59,48,0.1)', borderRadius: '16px', padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <button onClick={() => supabase.auth.signOut()} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: '#ff3b30', fontWeight: '700', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <FontAwesomeIcon icon={faSignOutAlt} /> Disconnect Cloud Socket Sreams
+                      <FontAwesomeIcon icon={faSignOutAlt} /> Disconnect Cloud Socket Streams
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* ==================== PRIVACY & NOTIFICATION MANAGEMENT SETUP ==================== */}
               {currentTab === 'private-settings' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: theme.accent, cursor: 'pointer' }} onClick={() => setCurrentTab('settings')}>
                     <FontAwesomeIcon icon={faArrowLeft} /> <span style={{ fontSize: '13px', fontWeight: '700' }}>Back to Configuration Menu</span>
                   </div>
                   
-                  {/* Strict Push Notification Logic Toggle Controls */}
                   <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '14px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <h4 style={{ margin: 0, fontSize: '12px', fontWeight: '800', color: theme.accent, textTransform: 'uppercase' }}>Alert Dispatch Configurations</h4>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1567,17 +1547,14 @@ export default function ChatRoom({ currentUser }) {
                 </div>
               )}
 
-              {/* Injected Admin Drawer Option Module Mapping */}
               {currentTab === 'admin-dashboard' && renderAdminDashboard()}
             </div>
           </div>
 
-          {/* MAIN COMMUNICATION CHAT VIEW AND PROFILE VIEW SPLIT ENGINE */}
           <div style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', background: theme.bg, position: 'relative' }}>
             {activeRoomId && currentActiveRoomData ? (
               isViewingInfo ? renderInfoPage() : (
                 <>
-                  {/* FLOATING HEADER CARD BLOCK */}
                   <div style={{ position: 'absolute', top: '16px', left: '20px', right: '20px', height: '70px', border: `1px solid ${theme.border}`, background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', zIndex: 100, boxShadow: theme.shadow }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => setIsViewingInfo(true)}>
                       <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(currentActiveRoomData.displayName), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontWeight: '800', fontSize: '15px', overflow:'hidden', flexShrink:0 }}>
@@ -1634,7 +1611,6 @@ export default function ChatRoom({ currentUser }) {
                     </div>
                   </div>
 
-                  {/* FLOATING PINNED COMPONENT BLOCK BANNER */}
                   {pinnedMessage && (
                     <div style={{ position: 'absolute', top: '96px', left: '24px', right: '24px', background: theme.card, borderLeft: `4px solid ${theme.accent}`, borderRadius: '8px', padding: '10px 16px', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
@@ -1645,7 +1621,6 @@ export default function ChatRoom({ currentUser }) {
                     </div>
                   )}
 
-                  {/* SCROLLABLE CONVERSATION SCROLLER PACKETS GRID */}
                   <div style={{ flex: 1, overflowY: 'auto', padding: '105px 24px 100px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     {filteredMessages.map((msg) => {
                       const isMe = msg.sender_id === currentUser.id;
@@ -1661,7 +1636,6 @@ export default function ChatRoom({ currentUser }) {
                             }} style={{ width: '18px', height: '18px', marginBottom: '12px', cursor: 'pointer' }} />
                           )}
                           
-                          {/* Built-In Framer Motion Swipe-to-Reply Context Hook System */}
                           <motion.div 
                             drag="x"
                             dragConstraints={{ left: 0, right: 60 }}
@@ -1708,7 +1682,6 @@ export default function ChatRoom({ currentUser }) {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  {/* ATTACHED BOTTOM DISPATCH BAR AREA INPUT INTERFACE CONTROL */}
                   <div style={{ position: 'absolute', bottom: '20px', left: '20px', right: '20px', background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '20px', padding: '12px', zIndex: 100, boxShadow: '0 -8px 32px rgba(0,0,0,0.05)' }}>
                     <AnimatePresence>
                       {isSelectMode && selectedMessages.length > 0 && (
@@ -1759,10 +1732,8 @@ export default function ChatRoom({ currentUser }) {
         </div>
       )}
 
-      {/* ==================== VIEWPORT 2: MOBILE INTERACTIVE LAYER ROUTING ==================== */}
       {isMobile && (
         <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-          
           <div style={{ flex: 1, overflowY: 'auto', width: '100%', height: 'calc(100% - 70px)', paddingBottom: '90px' }}>
             {!activeRoomId && currentTab === 'chats' && (
               <div style={{ padding: '16px 20px' }}>
@@ -1858,7 +1829,6 @@ export default function ChatRoom({ currentUser }) {
               </div>
             )}
 
-            {/* MOBILE SETTINGS ROUTER & PRIVACY LAYOUT */}
             {!activeRoomId && currentTab === 'settings' && (
               <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <span style={{ fontSize: '22px', fontWeight: '800' }}>Settings & Privacy Node</span>
@@ -1906,7 +1876,6 @@ export default function ChatRoom({ currentUser }) {
             {!activeRoomId && currentTab === 'admin-dashboard' && renderAdminDashboard()}
           </div>
 
-          {/* MOBILE INTERACTIVE FULL SCREEN CHAT BLOCK PANELS VIEWPORT */}
           {activeRoomId && currentActiveRoomData && (
             <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: theme.bg, zIndex: 500, display: 'flex', flexDirection: 'column' }}>
               {isViewingInfo ? renderInfoPage() : (
@@ -2016,7 +1985,6 @@ export default function ChatRoom({ currentUser }) {
             </div>
           )}
           
-          {/* LOWER MOBILE FLOATING NAVIGATION BAR */}
           {!activeRoomId && (
             <div style={{ position: 'fixed', bottom: '16px', left: '4%', width: '92%', height: '64px', background: theme.card, borderRadius: '30px', boxShadow: '0 10px 30px rgba(0,0,0,0.25)', border: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-around', alignItems: 'center', zIndex: 99, padding: '0 8px', boxSizing: 'border-box' }}>
               {tabsConfig.map(tab => {
@@ -2043,7 +2011,6 @@ export default function ChatRoom({ currentUser }) {
           )}
         </div>
       )}
-
     </div>
   );
 }
