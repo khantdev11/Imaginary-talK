@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../config/supabaseClient';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMessage, faEye, faEyeSlash, faCheckCircle, faTimesCircle } from '@fortawesome/free-solid-svg-icons';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Login() {
   const [isSignUpMode, setIsSignUpMode] = useState(false); 

@@ -1101,7 +1101,6 @@ export default function ChatRoom({ currentUser }) {
     );
   };
 
-  // 📱💻 RE-ENGINEERED RESPONSIVE: Master Superuser Dashboard Configuration Control Array
   const renderAdminDashboard = () => {
     if (!['admin', 'owner'].includes(myProfile.role)) {
       return <div style={{ padding: '24px', color: '#ff3b30', fontWeight: 'bold' }}>Security Alert: Unassigned Cluster Matrix Route. Access Refused.</div>;
@@ -1180,7 +1179,7 @@ export default function ChatRoom({ currentUser }) {
           </div>
         </div>
 
-        /* Global Cluster User Profiles Registry Ledger */
+        {/* Global Cluster User Profiles Registry Ledger */}
         <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', overflow: 'hidden', width:'100%' }}>
           <div style={{ padding: '14px 18px', background: theme.bg, fontSize: '11px', fontWeight: '800', color: theme.subText }}>TOTAL APP DATABASE REGISTERED MATRIX DATA ({allProfilesCache.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '200px', overflowY: 'auto' }}>
@@ -1487,7 +1486,7 @@ export default function ChatRoom({ currentUser }) {
                       <FontAwesomeIcon icon={faUserGear} style={{ color: theme.accent, width: '18px' }} /> Private Security & Notifications Setup
                     </button>
                     <button onClick={() => setCurrentTab('help-support')} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.2s' }}>
-                      <FontAwesomeIcon icon={faCircleInfo} style={{ color: theme.accent, width: '18px' }} /> Core Support Documentation
+                      <FontAwesomeIcon icon={faCircleInfo} style={{ color: theme.accent, width: '18px' }} /> Private Security & Notifications Setup
                     </button>
                     <button onClick={() => setDarkMode(!darkMode)} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.2s' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1741,7 +1740,7 @@ export default function ChatRoom({ currentUser }) {
                         onChange={handleInputTyping} 
                         style={{ flex: 1, padding: '14px 18px', borderRadius: '12px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '14px', outline: 'none' }} 
                       />
-                      <button type="submit" disabled={!newMessage.trim() || myMemberStatus === 'banned' || currentActiveRoomData?.is_bot_channel} style={{ height: '46px', width: '46px', borderRadius: '12px', background: theme.accent, color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><FontAwesomeIcon icon={faPaperPlane} /></button>
+                      <button type="submit" disabled={!newMessage.trim() || myMemberStatus === 'banned' || currentActiveRoomData?.is_bot_channel} style={{ height: '46px', width: '46px', borderRadius: '12px', background: theme.accent, color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FontAwesomeIcon icon={faPaperPlane} /></button>
                     </form>
                   </div>
                 </>
