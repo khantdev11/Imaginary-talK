@@ -18,7 +18,7 @@ import {
   faCertificate, faExclamationTriangle, faClock
 } from '@fortawesome/free-solid-svg-icons';
 
-const emojiOptions = ['😂','😆','😊','❤️','😡','😢','🙂','😮','🤗','👍','🎉','🔥','🙌' ];
+const emojiOptions = ['😂','😆','😊','❤️','😡','😢','🙂','😮','🤗','👍','🎉','🔥','🙌','😌','🫡','🤮','🗿'];
 const telegramBotToken = import.meta.env.VITE_TELEGRAM_BOT_TOKEN;
 const telegramChatId = import.meta.env.VITE_TELEGRAM_CHAT_ID;
 
@@ -1136,6 +1136,99 @@ export default function ChatRoom({ currentUser }) {
     });
   };
 
+  const renderSettingsScreen = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px', background: theme.bg, borderRadius: '16px', border: `1px solid ${theme.border}` }}>
+        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: getRandomColor(myProfile.username), display:'flex', justifyContent:'center', alignItems:'center', color:'#fff', fontWeight:'bold', fontSize:'16px' }}>
+          {myProfile.avatar_url ? <img src={myProfile.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%' }} /> : myProfile.username?.charAt(0).toUpperCase()}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{myProfile.username}</h4>
+          <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: theme.subText, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentUser.email}</p>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: theme.card, borderRadius: '16px', border: `1px solid ${theme.border}`, padding: '6px' }}>
+        <button onClick={() => setCurrentTab('private-settings')} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.2s' }}>
+          <FontAwesomeIcon icon={faUserGear} style={{ color: theme.accent, width: '18px' }} /> Private Security & Notifications Setup
+        </button>
+        <button onClick={() => setCurrentTab('help-support')} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.2s' }}>
+          <FontAwesomeIcon icon={faCircleInfo} style={{ color: theme.accent, width: '18px' }} /> Support Matrix Configuration Info
+        </button>
+        <button onClick={() => setDarkMode(!darkMode)} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.2s' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><FontAwesomeIcon icon={darkMode ? faSun : faMoon} style={{ color: '#ff9500', width: '18px' }} /> Interface Theme Matrix Mode</span>
+          <span style={{ fontSize: '11px', fontWeight: '800', background: theme.bg, padding: '4px 8px', borderRadius: '6px', color: theme.subText }}>{darkMode ? 'DARK' : 'LIGHT'}</span>
+        </button>
+      </div>
+
+      <div style={{ background: 'rgba(255,59,48,0.04)', border: '1px solid rgba(255,59,48,0.1)', borderRadius: '16px', padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <button onClick={() => supabase.auth.signOut()} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: '#ff3b30', fontWeight: '700', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <FontAwesomeIcon icon={faSignOutAlt} /> Disconnect Cloud Socket Streams
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderPrivateSettingsScreen = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '0 16px 16px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: theme.accent, cursor: 'pointer' }} onClick={() => setCurrentTab('settings')}>
+        <FontAwesomeIcon icon={faArrowLeft} /> <span style={{ fontSize: '13px', fontWeight: '700' }}>Back to Configuration Menu</span>
+      </div>
+      <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '14px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <h4 style={{ margin: 0, fontSize: '12px', fontWeight: '800', color: theme.accent, textTransform: 'uppercase' }}>Alert Dispatch Configurations</h4>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '13.5px', fontWeight: '600' }}><FontAwesomeIcon icon={faVolumeMute} style={{ marginRight: '6px', color: theme.subText }} /> Silence Out-App Push Notifications</span>
+            <p style={{ margin: 0, fontSize: '11px', color: theme.subText }}>Toggling this ON completely isolates and drops native push streams.</p>
+          </div>
+          <input type="checkbox" checked={myProfile.privacy_muted || false} onChange={e => handleSavePrivacyConfiguration('privacy_muted', e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: theme.accent }} />
+        </div>
+      </div>
+
+      <h4 style={{ margin: '8px 0 0 0', fontSize: '12px', textTransform: 'uppercase', color: theme.subText, fontWeight:'800' }}>Privacy Visibility Matrix</h4>
+      {['privacy_profile', 'privacy_bio', 'privacy_birthday'].map(field => (
+        <div key={field} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontSize: '12px', fontWeight: '700', textTransform: 'capitalize', color: theme.text }}>{field.replace('privacy_', '')} Publicity Isolation Level</span>
+          <select value={myProfile[field] || 'public'} onChange={e => handleSavePrivacyConfiguration(field, e.target.value)} style={{ padding: '10px 12px', background: theme.card, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '10px', fontSize: '13px', outline: 'none' }}>
+            <option value="public">Public Node Broadcast</option>
+            <option value="only_me">Isolated Locked Mode (Only Me)</option>
+          </select>
+        </div>
+      ))}
+
+      <hr style={{ border: 'none', height: '1px', background: theme.border, margin:'8px 0' }} />
+      <form onSubmit={handlePasswordChangeSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <span style={{ fontSize: '12px', fontWeight: '700', color: theme.subText }}>ROTATE ACCESS CREDENTIALS</span>
+        <input type="password" placeholder="New structural password security key..." value={newPassword} onChange={e => setNewPassword(e.target.value)} style={{ padding: '10px 12px', borderRadius: '10px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '13px', outline:'none' }} />
+        <button type="submit" style={{ padding: '10px', background: theme.accent, border: 'none', color: '#fff', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' }}>Rotate Password Key</button>
+        <button type="button" onClick={handleForgotPasswordTrigger} style={{ background: 'none', border: 'none', color: theme.accent, fontSize: '12px', textAlign: 'left', cursor: 'pointer', padding: '4px 0' }}><FontAwesomeIcon icon={faLock} /> Transmit Recovery Link Token</button>
+      </form>
+
+      <hr style={{ border: 'none', height: '1px', background: theme.border, margin:'8px 0' }} />
+      <form onSubmit={handleSendFeedback} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <span style={{ fontSize: '12px', fontWeight: '700', color: theme.subText }}><FontAwesomeIcon icon={faCommentDots} /> SUBMIT RECURSIVE FEEDBACK REPORT</span>
+        <textarea value={feedbackText} onChange={e => setFeedbackText(e.target.value)} placeholder="Type feedback anomalies..." style={{ padding: '10px', background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '10px', color: theme.text, fontSize: '13px', height: '60px', resize: 'none', outline:'none' }} />
+        <button type="submit" style={{ padding: '10px', background: theme.accent, border: 'none', color: '#fff', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' }}>Dispatch Telemetry Report</button>
+      </form>
+      <button onClick={executeDeleteAccount} style={{ width: '100%', padding: '12px', background: 'rgba(255,59,48,0.12)', border: '1px solid rgba(255,59,48,0.2)', color: '#ff3b30', borderRadius: '12px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', marginTop: '10px' }}>Delete Account permanently</button>
+    </div>
+  );
+
+  const renderHelpSupportScreen = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '0 16px 16px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: theme.accent, cursor: 'pointer' }} onClick={() => setCurrentTab('settings')}>
+        <FontAwesomeIcon icon={faArrowLeft} /> <span style={{ fontSize: '13px', fontWeight: '700' }}>Back to Configuration Menu</span>
+      </div>
+      <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800' }}><FontAwesomeIcon icon={faCircleInfo} /> Support Center & Engine Documentation</h4>
+      <div style={{ background: theme.card, padding: '14px', borderRadius: '14px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px', lineHeight: '1.5' }}>
+        <div>
+          <strong style={{ color: theme.text }}>Real-time Synchronizer System</strong>
+          <p style={{ margin: '2px 0 0 0', color: theme.subText }}>Imaginary talK updates pipelines recursively across high-fidelity WebSocket streams mapped inside Supabase channel protocols.</p>
+        </div>
+      </div>
+    </div>
+  );
+
   const tabsConfig = useMemo(() => {
     const baseTabs = [
       { id: 'chats', label: 'Chats', icon: faMessage },
@@ -1660,40 +1753,7 @@ export default function ChatRoom({ currentUser }) {
                 </div>
               )}
 
-              {currentTab === 'settings' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px', background: theme.bg, borderRadius: '16px', border: `1px solid ${theme.border}` }}>
-                    <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: getRandomColor(myProfile.username), display:'flex', justifyContent:'center', alignItems:'center', color:'#fff', fontWeight:'bold', fontSize:'16px' }}>
-                      {myProfile.avatar_url ? <img src={myProfile.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%' }} /> : myProfile.username?.charAt(0).toUpperCase()}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{myProfile.username}</h4>
-                      <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: theme.subText, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentUser.email}</p>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: theme.card, borderRadius: '16px', border: `1px solid ${theme.border}`, padding: '6px' }}>
-                    <button onClick={() => setCurrentTab('private-settings')} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.2s' }}>
-                      <FontAwesomeIcon icon={faUserGear} style={{ color: theme.accent, width: '18px' }} /> Private Security & Notifications Setup
-                    </button>
-                    <button onClick={() => setCurrentTab('help-support')} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.2s' }}>
-                      <FontAwesomeIcon icon={faCircleInfo} style={{ color: theme.accent, width: '18px' }} /> Support Matrix Configuration Info
-                    </button>
-                    <button onClick={() => setDarkMode(!darkMode)} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: theme.text, fontWeight: '600', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.2s' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <FontAwesomeIcon icon={darkMode ? faSun : faMoon} style={{ color: '#ff9500', width: '18px' }} /> Interface Theme Matrix Mode
-                      </span>
-                      <span style={{ fontSize: '11px', fontWeight: '800', background: theme.bg, padding: '4px 8px', borderRadius: '6px', color: theme.subText }}>{darkMode ? 'DARK' : 'LIGHT'}</span>
-                    </button>
-                  </div>
-
-                  <div style={{ background: 'rgba(255,59,48,0.04)', border: '1px solid rgba(255,59,48,0.1)', borderRadius: '16px', padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <button onClick={() => supabase.auth.signOut()} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderRadius: '12px', color: '#ff3b30', fontWeight: '700', fontSize: '14px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <FontAwesomeIcon icon={faSignOutAlt} /> Disconnect Cloud Socket Streams
-                    </button>
-                  </div>
-                </div>
-              )}
+              {currentTab === 'settings' && renderSettingsScreen()}
 
               {currentTab === 'private-settings' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -2064,49 +2124,9 @@ export default function ChatRoom({ currentUser }) {
             )}
 
             {/* MOBILE SETTINGS ROUTER & PRIVACY LAYOUT */}
-            {!activeRoomId && currentTab === 'settings' && (
-              <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <span style={{ fontSize: '22px', fontWeight: '800' }}>Settings & Privacy Node</span>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px', background: theme.card, borderRadius: '16px', border: `1px solid ${theme.border}` }}>
-                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(myProfile.username), display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:'bold' }}>
-                    {myProfile.avatar_url ? <img src={myProfile.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%' }} /> : myProfile.username?.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '15px' }}>{myProfile.username}</h4>
-                    <p style={{ margin: 0, fontSize: '11px', color: theme.subText }}>{currentUser.email}</p>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: theme.card, padding: '16px', borderRadius: '16px', border: `1px solid ${theme.border}` }}>
-                  <h4 style={{ margin: 0, fontSize: '12px', color: theme.accent, textTransform: 'uppercase', fontWeight: '800' }}>Private Isolation Settings</h4>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13.5px', fontWeight: '600' }}><FontAwesomeIcon icon={faVolumeMute} style={{ marginRight: '8px' }} /> Silence Notification Alerts</span>
-                    <input type="checkbox" checked={myProfile.privacy_muted || false} onChange={e => handleSavePrivacyConfiguration('privacy_muted', e.target.checked)} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
-                  </div>
-                  {['privacy_profile', 'privacy_bio', 'privacy_birthday'].map(field => (
-                    <div key={field} style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: '700', textTransform: 'capitalize' }}>{field.replace('privacy_', '')} Publicity Isolation Level</span>
-                      <select value={myProfile[field] || 'public'} onChange={e => handleSavePrivacyConfiguration(field, e.target.value)} style={{ padding: '8px 12px', background: theme.background, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '10px', fontSize: '12px' }}>
-                        <option value="public">Public Node Broadcast</option>
-                        <option value="only_me">Isolated Locked Mode (Only Me)</option>
-                      </select>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={{ background: theme.card, padding: '16px', borderRadius: '14px', fontSize: '11px', color: theme.subText, lineHeight: '1.5', border: `1px solid ${theme.border}` }}>
-                  <h5><FontAwesomeIcon icon={faFileContract} /> Terms of Operation Policies</h5>
-                  Decentralized messaging array data packets purge elements recursively upon active interface drop operations triggers safely.
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <button onClick={() => { setDarkMode(!darkMode); showNotification('Theme variable toggled'); }} style={{ padding: '14px', borderRadius: '12px', background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: '700', cursor:'pointer' }}><FontAwesomeIcon icon={darkMode ? faSun : faMoon} /> Switch Display Alignment</button>
-                  <button onClick={async () => { await supabase.auth.signOut(); window.location.reload(); }} style={{ padding: '14px', borderRadius: '12px', background: theme.accent, color: '#fff', fontWeight: '700', border: 'none', cursor:'pointer' }}>Disconnect Socket</button>
-                  <button onClick={executeDeleteAccount} style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.2)', color: '#ff3b30', fontWeight: '700', cursor:'pointer' }}>Terminate Profile Account</button>
-                </div>
-              </div>
-            )}
+            {!activeRoomId && currentTab === 'settings' && renderSettingsScreen()}
+            {!activeRoomId && currentTab === 'private-settings' && renderPrivateSettingsScreen()}
+            {!activeRoomId && currentTab === 'help-support' && renderHelpSupportScreen()}
 
             {!activeRoomId && currentTab === 'admin-dashboard' && renderAdminDashboard()}
           </div>
