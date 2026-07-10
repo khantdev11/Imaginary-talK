@@ -3,7 +3,7 @@ import { supabase } from '../config/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { requestNotificationPermission } from '../config/firebaseClient';
 
-// Font Awesome Icon Core Pack Injection
+// Font Awesome Icon Pack Injection
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faMessage, faSearch, faGear, faFolderPlus, faEllipsisVertical, 
@@ -13,10 +13,14 @@ import {
   faCalendarAlt, faAddressCard, faCheck, faShieldAlt, faUserCheck, 
   faQuoteLeft, faCircle, faUserPen, faUserCircle, faHome, faUserGroup, 
   faXmark, faCheckSquare, faTimesCircle, faGlobe, faUserLock,
-  faLink, faUser, faTrashCan, faFileContract, faCircleInfo, faCommentDots, 
+  faLink, faUser, faTrashCan, faFileContract, faCircleInfo, faCommentDots, faFaceSmile, 
   faShieldHalved, faUserGear, faUnlock, faWrench, faBullhorn, faRobot,
   faCertificate, faExclamationTriangle, faClock
 } from '@fortawesome/free-solid-svg-icons';
+
+const emojiOptions = ['😂','😆','😊','❤️','😡','😢','🙂','😮','🤗','👍','🎉','🔥','🙌' ];
+const telegramBotToken = import.meta.env.VITE_TELEGRAM_BOT_TOKEN;
+const telegramChatId = import.meta.env.VITE_TELEGRAM_CHAT_ID;
 
 // Hash-based Consistent Avatar Random Color System
 const getRandomColor = (name) => {
@@ -51,6 +55,10 @@ export default function ChatRoom({ currentUser }) {
   // Dynamic Real-time Status Indicators
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
+  // Real-time Presence States (Seen, Online, Offline Header Sync System)
+  const [userPresenceList, setUserPresenceList] = useState({});
+  const [isGroupAddMemberOpen, setIsGroupAddMemberOpen] = useState(false);
+
   // Interface Interactive Views States
   const [searchQuery, setSearchQuery] = useState('');
   const [chatSearchQuery, setChatSearchQuery] = useState('');
@@ -78,6 +86,7 @@ export default function ChatRoom({ currentUser }) {
 
   // Context Menus & Action Intermediaries
   const [activeMenuMessageId, setActiveMenuMessageId] = useState(null);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [replyTarget, setReplyTarget] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
@@ -108,6 +117,65 @@ export default function ChatRoom({ currentUser }) {
   useEffect(() => { roomsRef.current = rooms; }, [rooms]);
   useEffect(() => { myProfileRef.current = myProfile; }, [myProfile]);
 
+  // 🔔 NEW FEATURE: Hardware Back Key Navigation Interception Loop Protocol
+  useEffect(() => {
+    const handleHardwareBackAction = (event) => {
+      if (activeRoomIdRef.current) {
+        event.preventDefault();
+        setActiveRoomId(null);
+        setIsViewingInfo(false);
+        setCurrentTab('chats');
+        window.history.pushState(null, null, window.location.pathname);
+      }
+    };
+
+    window.history.pushState(null, null, window.location.pathname);
+    window.addEventListener('popstate', handleHardwareBackAction);
+
+    return () => {
+      window.removeEventListener('popstate', handleHardwareBackAction);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeRoomId) return;
+    window.history.pushState({ roomId: activeRoomId }, null, window.location.pathname);
+  }, [activeRoomId]);
+
+  // 🔔 NEW FEATURE: Real-time Global Presence System Tracking (Online/Last Seen Status Setup)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const presenceChannel = supabase.channel('online-presence-hub', {
+      config: { presence: { key: currentUser.id } }
+    });
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const state = presenceChannel.presenceState();
+        const formattedPresence = {};
+        Object.keys(state).forEach((uid) => {
+          formattedPresence[uid] = { status: 'online', last_seen: new Date().toISOString() };
+        });
+        setUserPresenceList(formattedPresence);
+      })
+      .on('presence', { event: 'join' }, ({ key }) => {
+        setUserPresenceList(prev => ({ ...prev, [key]: { status: 'online', last_seen: new Date().toISOString() } }));
+      })
+      .on('presence', { event: 'leave' }, ({ key }) => {
+        setUserPresenceList(prev => ({ ...prev, [key]: { status: 'offline', last_seen: new Date().toISOString() } }));
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await presenceChannel.track({ user_id: currentUser.id, online_at: new Date().toISOString() });
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(presenceChannel);
+    };
+  }, [currentUser]);
+
   // Enhanced Light / Dark Mode Colors Configs
   const theme = useMemo(() => ({
     bg: darkMode ? '#0c0c0e' : '#f4f5f7',
@@ -117,7 +185,7 @@ export default function ChatRoom({ currentUser }) {
     subText: darkMode ? '#8e8e93' : '#4b5563',
     accent: '#007aff',
     accentLight: darkMode ? 'rgba(0, 122, 255, 0.18)' : 'rgba(0, 122, 255, 0.1)',
-    bubbleMe: '#007aff',
+    bubbleMe: '#00142a',
     bubbleUser: darkMode ? '#24242b' : '#e5e7eb',
     textMe: '#ffffff',
     textUser: darkMode ? '#f3f4f6' : '#111827',
@@ -128,10 +196,13 @@ export default function ChatRoom({ currentUser }) {
 
   const showNotification = (message, type = 'success') => {
     const id = Date.now();
-    setNotifications(prev => [...prev, { id, message, type }]);
+    setNotifications(prev => {
+      const next = [...prev.slice(-2), { id, message, type }];
+      return next;
+    });
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 2500);
+    }, 2000);
   };
 
   const triggerPushNotification = (title, bodyContext) => {
@@ -161,27 +232,6 @@ export default function ChatRoom({ currentUser }) {
     const handleResize = () => setIsMobile(window.innerWidth <= 840);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
-    const fetchMaintenanceStatus = async () => {
-      const { data, error } = await supabase.from('system_settings').select('*').eq('key', 'maintenance_mode').maybeSingle();
-      if (data) setMaintenanceMode(data.value === 'true');
-    };
-    fetchMaintenanceStatus();
-
-    const systemSubscription = supabase
-      .channel('public:system_settings')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'system_settings' }, (payload) => {
-        if (payload.new && payload.new.key === 'maintenance_mode') {
-          setMaintenanceMode(payload.new.value === 'true');
-        }
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(systemSubscription);
-    };
   }, []);
 
   useEffect(() => {
@@ -346,14 +396,14 @@ export default function ChatRoom({ currentUser }) {
 
         if (room.is_bot_channel || room.name === 'ItalK Official Noti Bot') {
           roomTitle = "ItalK Official Noti Bot";
-          roomAvatar = "https://img-url1.netlify.app/imaginary";
+          roomAvatar = "https://images.unsplash.com/photo-1546776310-eef45dd6d63c?w=150&h=150&fit=crop";
         } else if (room.type === 'personal') {
           const alternateMember = room.room_members?.find(m => m.user_id !== currentUser.id);
           if (alternateMember && alternateMember.profiles) {
             roomTitle = alternateMember.profiles.username;
             roomAvatar = alternateMember.profiles.privacy_profile === 'public' || alternateMember.user_id === currentUser.id
               ? alternateMember.profiles.avatar_url 
-              : 'https://img-url1.netlify.app/imaginary';
+              : 'https://img-url1.netlify.app/default';
           } else {
             roomTitle = 'Saved Chat';
           }
@@ -513,6 +563,97 @@ export default function ChatRoom({ currentUser }) {
       setCurrentTab('chats');
     } catch (err) {
       showNotification('Creation matrix failure: ' + err.message, 'error');
+    }
+  };
+
+  // 🔔 NEW FEATURE: Group Membership Management Loop Functions
+  const handleAddNewGroupMember = async (targetUserId) => {
+    if (!activeRoomId) return;
+    try {
+      const { error } = await supabase.from('room_members').insert([
+        { room_id: activeRoomId, user_id: targetUserId, role: 'member', status: 'active' }
+      ]);
+      if (error) throw error;
+      showNotification('New member pipeline injected to group roster ledger.');
+      setIsGroupAddMemberOpen(false);
+      fetchMessagesForRoom(activeRoomId);
+    } catch (e) {
+      showNotification('Failed to register member.', 'error');
+    }
+  };
+
+  const handleRevokeGroupAdminRole = async (targetUserId) => {
+    if (!activeRoomId) return;
+    try {
+      const { error } = await supabase
+        .from('room_members')
+        .update({ role: 'member' })
+        .eq('room_id', activeRoomId)
+        .eq('user_id', targetUserId);
+      if (error) throw error;
+      showNotification('Admin operational level revoked down to standard member.');
+      fetchMessagesForRoom(activeRoomId);
+    } catch (e) {
+      showNotification('Failed transformation privileges.', 'error');
+    }
+  };
+
+  const manageMemberAction = async (targetUserId, action) => {
+    if (!activeRoomId) return;
+    try {
+      if (action === 'admin') {
+        const { error } = await supabase
+          .from('room_members')
+          .update({ role: 'admin' })
+          .eq('room_id', activeRoomId)
+          .eq('user_id', targetUserId);
+        if (error) throw error;
+        showNotification('Member promoted to Admin role');
+      } else if (action === 'ban_text') {
+        const { error } = await supabase
+          .from('room_members')
+          .update({ status: 'banned' })
+          .eq('room_id', activeRoomId)
+          .eq('user_id', targetUserId);
+        if (error) throw error;
+        showNotification('Member muted for text access');
+      } else if (action === 'unban_text') {
+        const { error } = await supabase
+          .from('room_members')
+          .update({ status: 'active' })
+          .eq('room_id', activeRoomId)
+          .eq('user_id', targetUserId);
+        if (error) throw error;
+        showNotification('Member restored to active messaging');
+      } else if (action === 'kick') {
+        const { error } = await supabase
+          .from('room_members')
+          .delete()
+          .eq('room_id', activeRoomId)
+          .eq('user_id', targetUserId);
+        if (error) throw error;
+        showNotification('Member removed from group room');
+      }
+      fetchRoomsList();
+      if (activeRoomId) fetchMessagesForRoom(activeRoomId);
+    } catch (e) {
+      showNotification('Group member action failed: ' + e.message, 'error');
+    }
+  };
+
+
+  // NEW FEATURE: Chat List Room Item Destructive Database Trace Purge
+  const executeDeleteWholeChatRoom = async (roomId) => {
+    if (!window.confirm("Are you sure you want to delete and wipe this entire chat log history?")) return;
+    try {
+      await supabase.from('messages').delete().eq('room_id', roomId);
+      await supabase.from('room_members').delete().eq('room_id', roomId).eq('user_id', currentUser.id);
+      showNotification('Chat track traces disconnected and destroyed cleanly.');
+      setActiveMenuRoomId(null);
+      if (activeRoomId === roomId) setActiveRoomId(null);
+      fetchRoomsList();
+    } catch (e) {
+      showNotification('Wipe failure protocol.', 'error');
     }
   };
 
@@ -689,31 +830,6 @@ export default function ChatRoom({ currentUser }) {
     }
   };
 
-  const manageMemberAction = async (targetUserId, actionType) => {
-    try {
-      if (actionType === 'kick') {
-        const { error } = await supabase.from('room_members').delete().eq('room_id', activeRoomId).eq('user_id', targetUserId);
-        if (error) throw error;
-        showNotification('Member dropped from group.');
-      } else if (actionType === 'admin') {
-        const { error } = await supabase.from('room_members').update({ role: 'admin' }).eq('room_id', activeRoomId).eq('user_id', targetUserId);
-        if (error) throw error;
-        showNotification('Member promoted to Admin status.');
-      } else if (actionType === 'ban_text') {
-        const { error } = await supabase.from('room_members').update({ status: 'banned' }).eq('room_id', activeRoomId).eq('user_id', targetUserId);
-        if (error) throw error;
-        showNotification('Member text abilities restricted (Muted).');
-      } else if (actionType === 'unban_text') {
-        const { error } = await supabase.from('room_members').update({ status: 'active' }).eq('room_id', activeRoomId).eq('user_id', targetUserId);
-        if (error) throw error;
-        showNotification('Member text abilities reinstated.');
-      }
-      fetchMessagesForRoom(activeRoomId);
-    } catch (err) {
-      showNotification('Action failed: ' + err.message, 'error');
-    }
-  };
-
   const handleToggleMaintenanceMode = async () => {
     const nextState = !maintenanceMode;
     try {
@@ -856,11 +972,44 @@ export default function ChatRoom({ currentUser }) {
     }
   };
 
+  const handleSelectEmoji = (emoji) => {
+    setNewMessage(prev => prev + emoji);
+    setIsEmojiPickerOpen(false);
+  };
+
+  const sendFeedbackToTelegram = async (feedbackPayload) => {
+    if (!telegramBotToken || !telegramChatId) {
+      throw new Error('Telegram bot token or chat id is not configured.');
+    }
+
+    const response = await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: telegramChatId,
+        text: `New feedback from ${currentUser?.username || currentUser?.email || 'unknown user'}:\n\n${feedbackPayload}`,
+        parse_mode: 'HTML'
+      })
+    });
+
+    const body = await response.json();
+    if (!response.ok || body.ok === false) {
+      throw new Error(body.description || 'Telegram API failed to send feedback');
+    }
+
+    return body;
+  };
+
   const handleSendFeedback = async (e) => {
     e.preventDefault();
     if (!feedbackText.trim()) return;
-    showNotification('Thank you! Your secure telemetry feedback has been dispatched.', 'success');
-    setFeedbackText('');
+    try {
+      await sendFeedbackToTelegram(feedbackText.trim());
+      showNotification('Thank you! Your secure telemetry feedback has been dispatched via Telegram.', 'success');
+      setFeedbackText('');
+    } catch (err) {
+      showNotification(`Feedback failed: ${err.message}`, 'error');
+    }
   };
 
   const handlePasswordChangeSubmit = async (e) => {
@@ -929,6 +1078,23 @@ export default function ChatRoom({ currentUser }) {
 
   const personalRooms = rooms.filter(r => r.type === 'personal');
   const groupRooms = rooms.filter(r => r.type === 'group');
+
+  // NEW FEATURE METHOD: Real-time Header Status presence helper string generator
+  const getRoomPresenceSubheaderText = () => {
+    if (!currentActiveRoomData) return '';
+    if (currentActiveRoomData.is_bot_channel) return 'Official Automated System System Channel';
+    if (currentActiveRoomData.type === 'group') return `Group Channel • ${roomMembers.length} active roles`;
+    
+    // Direct Personal Presence Sync Trace Tracker
+    const alternateMember = currentActiveRoomData.room_members?.find(m => m.user_id !== currentUser.id);
+    if (!alternateMember) return 'Secure cloud buffer loop';
+    
+    const statusObj = userPresenceList[alternateMember.user_id];
+    if (statusObj?.status === 'online') {
+      return '🟢 Online Encryption Sockets';
+    }
+    return '⚪ Offline • Secure Node Sync';
+  };
 
   const renderRoomListItems = (list) => {
     if (list.length === 0) return <div style={{ padding: '16px', color: theme.subText, fontSize: '13px', textAlign: 'center' }}>No chats found</div>;
@@ -1039,6 +1205,32 @@ export default function ChatRoom({ currentUser }) {
             )}
           </div>
 
+          {/* NEW FEATURE MODALITY: Group Configuration Interactive Controls Inside Group Info Layout */}
+          {isGroup && ['owner', 'admin'].includes(myRoomRole) && (
+            <div style={{ width:'100%', maxWidth:'480px', background: theme.card, borderRadius:'16px', border:`1px solid ${theme.border}`, padding:'16px', display:'flex', flexDirection:'column', gap:'12px' }}>
+              <h4 style={{ fontSize:'14px', color:theme.accent }}>🛡️ Group Master Roster Actions</h4>
+              <button onClick={() => setIsGroupAddMemberOpen(!isGroupAddMemberOpen)} style={{ padding:'10px', background:theme.accentLight, border:`1px solid ${theme.accent}40`, color:theme.accent, borderRadius:'10px', fontWeight:'700', cursor:'pointer' }}>
+                <FontAwesomeIcon icon={faUserPlus} style={{ marginRight:'6px' }} /> Add New Member Loop
+              </button>
+              
+              <AnimatePresence>
+                {isGroupAddMemberOpen && (
+                  <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }} exit={{ opacity:0, height:0 }} style={{ background:theme.bg, borderRadius:'10px', padding:'8px', overflow:'hidden' }}>
+                    <span style={{ fontSize:'11px', fontWeight:'bold', display:'block', marginBottom:'6px' }}>CHOOSE LEDGER ACCOUNT TO INJECT:</span>
+                    <div style={{ display:'flex', flexDirection:'column', gap:'4px', maxHeight:'120px', overflowY:'auto' }}>
+                      {allProfilesCache.filter(p => !roomMembers.some(m => m.user_id === p.id)).map(p => (
+                        <div key={p.id} onClick={() => handleAddNewGroupMember(p.id)} style={{ padding:'6px', borderRadius:'6px', background:theme.card, cursor:'pointer', fontSize:'13px', display:'flex', justifyContent:'space-between' }}>
+                          <span>{p.username}</span>
+                          <FontAwesomeIcon icon={faUserPlus} style={{ opacity:0.5 }} />
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
           {!isGroup && targetPersonalProfile && (
             <div style={{ width: '100%', maxWidth: '420px', background: theme.card, borderRadius: '18px', border: `1px solid ${theme.border}`, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box' }}>
               <div>
@@ -1077,6 +1269,9 @@ export default function ChatRoom({ currentUser }) {
                     </div>
                     {['owner', 'admin'].includes(myRoomRole) && member.user_id !== currentUser.id && (
                       <div style={{ display: 'flex', gap: '6px' }}>
+                        {myRoomRole === 'owner' && member.role === 'admin' && (
+                          <button onClick={() => handleRevokeGroupAdminRole(member.user_id)} title="Remove Admin Role" style={{ background: '#ff9500', border: 'none', color: '#fff', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer' }}><FontAwesomeIcon icon={faUserMinus} /></button>
+                        )}
                         {myRoomRole === 'owner' && member.role !== 'admin' && (
                           <button onClick={() => manageMemberAction(member.user_id, 'admin')} title="Promote to Admin" style={{ background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, padding: '8px 10px', borderRadius: '8px', cursor: 'pointer' }}><FontAwesomeIcon icon={faUserShield} /></button>
                         )}
@@ -1098,6 +1293,7 @@ export default function ChatRoom({ currentUser }) {
     );
   };
 
+  // 📱💻 RE-ENGINEERED RESPONSIVE: Master Superuser Dashboard Configuration Control Array
   const renderAdminDashboard = () => {
     if (!['admin', 'owner'].includes(myProfile.role)) {
       return <div style={{ padding: '24px', color: '#ff3b30', fontWeight: 'bold' }}>Security Alert: Unassigned Cluster Matrix Route. Access Refused.</div>;
@@ -1112,8 +1308,12 @@ export default function ChatRoom({ currentUser }) {
           <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: theme.subText }}>Operational privileges level: Master Superuser Array</p>
         </div>
 
+        {/* Dynamic Multi-Column Grid Layout for Desktop vs Stacked Mobile Viewports */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px', width: '100%' }}>
+          
+          {/* Server Loop Controls & Broadcast Card Block */}
           <div style={{ display:'flex', flexDirection:'column', gap:'20px' }}>
+            {/* Maintenance Toggle Cluster Block */}
             <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', padding: '16px' }}>
               <h4 style={{ margin: '0 0 4px 0', fontSize: '15px', color: theme.text }}>Global App Servers Maintenance Loop</h4>
               <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: theme.subText }}> drops all connection sockets for non-admin users instantly.</p>
@@ -1122,6 +1322,7 @@ export default function ChatRoom({ currentUser }) {
               </button>
             </div>
 
+            {/* Official Noti Bot Broadcast Node Engine */}
             <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
                 <h4 style={{ margin: 0, fontSize: '15px', color: theme.text }}><FontAwesomeIcon icon={faRobot} style={{ marginRight: '6px', color: theme.accent }} /> ItalK Official Noti Bot Broadcast <FontAwesomeIcon icon={faCertificate} style={{color:'#007aff', fontSize:'13px'}} /></h4>
@@ -1134,6 +1335,7 @@ export default function ChatRoom({ currentUser }) {
             </div>
           </div>
 
+          {/* User Node Enforcement Hub Block */}
           <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', padding: '16px', display:'flex', flexDirection:'column', gap:'14px' }}>
             <div>
               <h4 style={{ margin: 0, fontSize: '15px', color: theme.text }}><FontAwesomeIcon icon={faUserLock} style={{ marginRight: '6px', color: '#ff9500' }} /> Target Node Enforcement Hub</h4>
@@ -1170,6 +1372,7 @@ export default function ChatRoom({ currentUser }) {
           </div>
         </div>
 
+        {/* Global Cluster User Profiles Registry Ledger */}
         <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '16px', overflow: 'hidden', width:'100%' }}>
           <div style={{ padding: '14px 18px', background: theme.bg, fontSize: '11px', fontWeight: '800', color: theme.subText }}>TOTAL APP DATABASE REGISTERED MATRIX DATA ({allProfilesCache.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '200px', overflowY: 'auto' }}>
@@ -1213,10 +1416,20 @@ export default function ChatRoom({ currentUser }) {
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', background: theme.bg, color: theme.text, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', overflow: 'hidden', position: 'relative' }}>
       
-      {(activeMenuMessageId || activeMenuRoomId) && (
-        <div style={{ position:'fixed', top:0, left:0, width:'100vw', height:'100vh', zIndex:9980, background:'transparent' }} onClick={() => { setActiveMenuMessageId(null); setActiveMenuRoomId(null); }} />
-      )}
+      {/* 🔔 NEW FEATURE: Context Menu Backdrop Glassmorphism Blur Filter Overlay Container */}
+      <AnimatePresence>
+        {(activeMenuMessageId || activeMenuRoomId) && (
+          <motion.div 
+            initial={{ opacity:0, backdropFilter:'blur(0px)' }}
+            animate={{ opacity:1, backdropFilter:'blur(12px)' }}
+            exit={{ opacity:0, backdropFilter:'blur(0px)' }}
+            style={{ position:'fixed', top:0, left:0, width:'100vw', height:'100vh', zIndex:9975, background:'rgba(0,0,0,0.35)' }} 
+            onClick={() => { setActiveMenuMessageId(null); setActiveMenuRoomId(null); }} 
+          />
+        )}
+      </AnimatePresence>
 
+      {/* Toast Overlay Banner Element */}
       <div style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 99999, display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <AnimatePresence>
           {notifications.map(n => (
@@ -1228,9 +1441,10 @@ export default function ChatRoom({ currentUser }) {
         </AnimatePresence>
       </div>
 
+      {/* Chat List Item Options Press Context Menu Architecture Overlay */}
       <AnimatePresence>
         {activeMenuRoomId && (
-          <div style={{ position: 'fixed', top: roomMenuPosition.y, left: roomMenuPosition.x, background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '14px', padding: '6px', width: '160px', boxShadow: '0 12px 32px rgba(0,0,0,0.3)', zIndex: 9991, display:'flex', flexDirection:'column', gap:'2px' }}>
+          <div style={{ position: 'fixed', top: roomMenuPosition.y, left: roomMenuPosition.x, background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '14px', padding: '6px', width: '170px', boxShadow: '0 12px 32px rgba(0,0,0,0.4)', zIndex: 9991, display:'flex', flexDirection:'column', gap:'2px' }}>
             {(() => {
               const targetMenuRoom = rooms.find(r => r.id === activeMenuRoomId);
               if (!targetMenuRoom) return null;
@@ -1242,11 +1456,10 @@ export default function ChatRoom({ currentUser }) {
                   <button onClick={() => toggleMuteRoomState(targetMenuRoom.id, targetMenuRoom.isMuted)} style={{ background: 'none', border: 'none', color: theme.text, padding: '10px 12px', borderRadius: '8px', textAlign: 'left', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width:'100%' }}>
                     <FontAwesomeIcon icon={targetMenuRoom.isMuted ? faVolumeUp : faVolumeMute} style={{ width: '14px', color:'#ff9500' }} /> {targetMenuRoom.isMuted ? 'Unmute Alerts' : 'Mute Room Alerts'}
                   </button>
-                  {targetMenuRoom.type === 'group' && (
-                    <button onClick={() => { setActiveRoomId(targetMenuRoom.id); executeLeaveRoom(); }} style={{ background: 'none', border: 'none', color: '#ff3b30', padding: '10px 12px', borderRadius: '8px', textAlign: 'left', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width:'100%' }}>
-                      <FontAwesomeIcon icon={faSignOutAlt} style={{ width: '14px' }} /> Leave Channel Hub
-                    </button>
-                  )}
+                  {/* 🔔 NEW FEATURE: Destructive Clean Wipe Chat History Option inside Long press option bar */}
+                  <button onClick={() => executeDeleteWholeChatRoom(targetMenuRoom.id)} style={{ background: 'none', border: 'none', color: '#ff3b30', padding: '10px 12px', borderRadius: '8px', textAlign: 'left', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width:'100%', fontWeight:'bold' }}>
+                    <FontAwesomeIcon icon={faTrashCan} style={{ width: '14px' }} /> Delete Chat Log
+                  </button>
                 </>
               );
             })()}
@@ -1256,17 +1469,13 @@ export default function ChatRoom({ currentUser }) {
 
       <AnimatePresence>
         {activeMenuMessageId && (
-          <motion.div 
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} 
-            onClick={() => setActiveMenuMessageId(null)}
-            style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backdropFilter: 'blur(5px)', background: 'rgba(0,0,0,0.18)', zIndex: 9990 }}
-          >
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'transparent', zIndex: 9985 }} onClick={() => setActiveMenuMessageId(null)}>
             <div 
               onClick={e => e.stopPropagation()}
               style={{ 
                 position: 'absolute', top: menuPosition.y, left: menuPosition.x,
                 background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '14px',
-                padding: '6px', width: '160px', boxShadow: '0 12px 32px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', gap: '2px'
+                padding: '6px', width: '160px', boxShadow: '0 12px 32px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', gap: '2px', zIndex:9999
               }}
             >
               {(() => {
@@ -1297,7 +1506,7 @@ export default function ChatRoom({ currentUser }) {
                 );
               })()}
             </div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -1547,14 +1756,17 @@ export default function ChatRoom({ currentUser }) {
                 </div>
               )}
 
+              {/* Injected Admin Drawer Option Module Mapping */}
               {currentTab === 'admin-dashboard' && renderAdminDashboard()}
             </div>
           </div>
 
+          {/* MAIN COMMUNICATION CHAT VIEW AND PROFILE VIEW SPLIT ENGINE */}
           <div style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', background: theme.bg, position: 'relative' }}>
             {activeRoomId && currentActiveRoomData ? (
               isViewingInfo ? renderInfoPage() : (
                 <>
+                  {/* FLOATING HEADER CARD BLOCK */}
                   <div style={{ position: 'absolute', top: '16px', left: '20px', right: '20px', height: '70px', border: `1px solid ${theme.border}`, background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', zIndex: 100, boxShadow: theme.shadow }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => setIsViewingInfo(true)}>
                       <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(currentActiveRoomData.displayName), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontWeight: '800', fontSize: '15px', overflow:'hidden', flexShrink:0 }}>
@@ -1570,10 +1782,9 @@ export default function ChatRoom({ currentUser }) {
                             <FontAwesomeIcon icon={faUserCheck} style={{ color: theme.adminMark, fontSize: '13px' }} />
                           )}
                         </h4>
+                        {/* 🔔 NEW FEATURE: Seen / Online Presence Header Info Context Trigger Injection Layer */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: theme.subText, marginTop: '2px' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><FontAwesomeIcon icon={faCircle} style={{ color: '#34c759', fontSize: '7px' }} /> Online encryption socket</span>
-                          <span>•</span>
-                          <span>Click for layout info</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>{getRoomPresenceSubheaderText()}</span>
                         </div>
                       </div>
                     </div>
@@ -1581,7 +1792,7 @@ export default function ChatRoom({ currentUser }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       {isSearchingChat ? (
                         <div style={{ display: 'flex', alignItems: 'center', background: theme.bg, borderRadius: '8px', padding: '2px 8px', marginRight: '6px', border: `1px solid ${theme.border}` }}>
-                          <input type="text" placeholder="Search node logs..." value={chatSearchQuery} onChange={e => setChatSearchQuery(e.target.value)} style={{ border: 'none', background: 'none', color: theme.text, outline: 'none', fontSize: '12px', width: '120px' }} />
+                          <input type="text" placeholder="Search node logs..." value={chatSearchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ border: 'none', background: 'none', color: theme.text, outline: 'none', fontSize: '12px', width: '120px' }} />
                           <FontAwesomeIcon icon={faXmark} style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => { setIsSearchingChat(false); setChatSearchQuery(''); }} />
                         </div>
                       ) : (
@@ -1611,6 +1822,7 @@ export default function ChatRoom({ currentUser }) {
                     </div>
                   </div>
 
+                  {/* FLOATING PINNED COMPONENT BLOCK BANNER */}
                   {pinnedMessage && (
                     <div style={{ position: 'absolute', top: '96px', left: '24px', right: '24px', background: theme.card, borderLeft: `4px solid ${theme.accent}`, borderRadius: '8px', padding: '10px 16px', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
@@ -1621,6 +1833,7 @@ export default function ChatRoom({ currentUser }) {
                     </div>
                   )}
 
+                  {/* SCROLLABLE CONVERSATION SCROLLER PACKETS GRID */}
                   <div style={{ flex: 1, overflowY: 'auto', padding: '105px 24px 100px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     {filteredMessages.map((msg) => {
                       const isMe = msg.sender_id === currentUser.id;
@@ -1638,7 +1851,8 @@ export default function ChatRoom({ currentUser }) {
                           
                           <motion.div 
                             drag="x"
-                            dragConstraints={{ left: 0, right: 60 }}
+                            dragConstraints={{ left: 0, right: 65 }}
+                            dragElastic={0.15}
                             onDragEnd={(e, info) => {
                               if (info.offset.x > 45) {
                                 setReplyTarget(msg);
@@ -1682,8 +1896,27 @@ export default function ChatRoom({ currentUser }) {
                     <div ref={messagesEndRef} />
                   </div>
 
+                  {/* ATTACHED BOTTOM DISPATCH BAR AREA INPUT INTERFACE CONTROL */}
                   <div style={{ position: 'absolute', bottom: '20px', left: '20px', right: '20px', background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '20px', padding: '12px', zIndex: 100, boxShadow: '0 -8px 32px rgba(0,0,0,0.05)' }}>
+                    
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' }}>
+                      {!currentActiveRoomData?.is_bot_channel && (
+                        <button type="button" onClick={() => setIsEmojiPickerOpen(prev => !prev)} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 12px', borderRadius:'14px', background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, cursor:'pointer' }}>
+                          <FontAwesomeIcon icon={faFaceSmile} /> Emoji Picker
+                        </button>
+                      )}
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '12px', color: theme.subText }}>{currentActiveRoomData?.is_bot_channel ? 'Read-only channel' : 'Swipe right or use reply menu'}</span>
+                      </div>
+                    </div>
                     <AnimatePresence>
+                      {isEmojiPickerOpen && !currentActiveRoomData?.is_bot_channel && (
+                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ display:'flex', gap:'8px', flexWrap:'wrap', padding:'10px 0', marginBottom:'8px', borderBottom:`1px solid ${theme.border}` }}>
+                          {emojiOptions.map(emoji => (
+                            <button key={emoji} type="button" onClick={() => handleSelectEmoji(emoji)} style={{ padding:'8px 10px', borderRadius:'12px', border:`1px solid ${theme.border}`, background: theme.card, fontSize: '18px', cursor: 'pointer' }}>{emoji}</button>
+                          ))}
+                        </motion.div>
+                      )}
                       {isSelectMode && selectedMessages.length > 0 && (
                         <div style={{ background: theme.card, padding: '8px 12px', borderRadius: '10px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '13px' }}>Selected Packet Count: {selectedMessages.length}</span>
@@ -1713,7 +1946,7 @@ export default function ChatRoom({ currentUser }) {
                         onChange={handleInputTyping} 
                         style={{ flex: 1, padding: '14px 18px', borderRadius: '12px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '14px', outline: 'none' }} 
                       />
-                      <button type="submit" disabled={!newMessage.trim() || myMemberStatus === 'banned' || currentActiveRoomData?.is_bot_channel} style={{ height: '46px', width: '46px', borderRadius: '12px', background: theme.accent, color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FontAwesomeIcon icon={faPaperPlane} /></button>
+                      <button type="submit" disabled={!newMessage.trim() || myMemberStatus === 'banned' || currentActiveRoomData?.is_bot_channel} style={{ height: '46px', width: '46px', borderRadius: '12px', background: theme.accent, color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><FontAwesomeIcon icon={faPaperPlane} /></button>
                     </form>
                   </div>
                 </>
@@ -1732,6 +1965,7 @@ export default function ChatRoom({ currentUser }) {
         </div>
       )}
 
+      {/* ==================== VIEWPORT 2: MOBILE INTERACTIVE LAYER ROUTING ==================== */}
       {isMobile && (
         <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <div style={{ flex: 1, overflowY: 'auto', width: '100%', height: 'calc(100% - 70px)', paddingBottom: '90px' }}>
@@ -1829,6 +2063,7 @@ export default function ChatRoom({ currentUser }) {
               </div>
             )}
 
+            {/* MOBILE SETTINGS ROUTER & PRIVACY LAYOUT */}
             {!activeRoomId && currentTab === 'settings' && (
               <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <span style={{ fontSize: '22px', fontWeight: '800' }}>Settings & Privacy Node</span>
@@ -1876,6 +2111,7 @@ export default function ChatRoom({ currentUser }) {
             {!activeRoomId && currentTab === 'admin-dashboard' && renderAdminDashboard()}
           </div>
 
+          {/* MOBILE INTERACTIVE FULL SCREEN CHAT BLOCK PANELS VIEWPORT */}
           {activeRoomId && currentActiveRoomData && (
             <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: theme.bg, zIndex: 500, display: 'flex', flexDirection: 'column' }}>
               {isViewingInfo ? renderInfoPage() : (
@@ -1895,7 +2131,8 @@ export default function ChatRoom({ currentUser }) {
                           <FontAwesomeIcon icon={faUserCheck} style={{ color: theme.adminMark, fontSize: '12px' }} />
                         )}
                       </h4>
-                      <div style={{ fontSize: '10px', color: '#34c759', fontWeight: 'bold' }}>Click for profile info</div>
+                      {/* 🔔 NEW FEATURE: Real-time Presence info sync layout inside mobile viewport top app bar header */}
+                      <div style={{ fontSize: '10px', color: '#34c759', fontWeight: 'bold' }}>{getRoomPresenceSubheaderText()}</div>
                     </div>
                     <FontAwesomeIcon icon={faEllipsisVertical} onClick={() => setShowHeaderMenu(!showHeaderMenu)} style={{ padding: '6px', cursor: 'pointer' }} />
                     
@@ -1919,9 +2156,12 @@ export default function ChatRoom({ currentUser }) {
                       const nestedReply = msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id) : null;
                       return (
                         <div key={msg.id} onContextMenu={(e) => handleMsgContextMenu(e, msg)} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '8px', width: '100%' }}>
-                          <motion.div
+                          
+                          {/* Gesture Tracks Swipe to Reply integration on Mobile bubbles */}
+                          <motion.div 
                             drag="x"
                             dragConstraints={{ left: 0, right: 50 }}
+                            dragElastic={0.15}
                             onDragEnd={(e, info) => {
                               if (info.offset.x > 40) {
                                 setReplyTarget(msg);
@@ -1962,9 +2202,28 @@ export default function ChatRoom({ currentUser }) {
                   </div>
 
                   <div style={{ position: 'absolute', bottom: '10px', left: '10px', right: '10px', background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '18px', padding: '8px', border: `1px solid ${theme.border}`, zIndex: 510, boxShadow: theme.shadow, display: 'flex', flexDirection: 'column' }}>
+                    
+                    {!currentActiveRoomData?.is_bot_channel && (
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' }}>
+                        <button type="button" onClick={() => setIsEmojiPickerOpen(prev => !prev)} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 12px', borderRadius:'14px', background: theme.card, border:`1px solid ${theme.border}`, color: theme.text, cursor:'pointer' }}>
+                          <FontAwesomeIcon icon={faFaceSmile} /> Add Emoji
+                        </button>
+                        <span style={{ fontSize:'11px', color: theme.subText }}>Swipe right on a bubble to reply</span>
+                      </div>
+                    )}
+                    <AnimatePresence>
+                      {isEmojiPickerOpen && !currentActiveRoomData?.is_bot_channel && (
+                        <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }} exit={{ opacity:0, height:0 }} style={{ display:'flex', flexWrap:'wrap', gap:'8px', padding:'8px 0', borderBottom:`1px solid ${theme.border}`, marginBottom:'8px' }}>
+                          {emojiOptions.map(emoji => (
+                            <button key={emoji} type="button" onClick={() => handleSelectEmoji(emoji)} style={{ padding:'8px 10px', borderRadius:'12px', border:`1px solid ${theme.border}`, background: theme.card, fontSize:'16px', cursor:'pointer' }}>{emoji}</button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
                     {replyTarget && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', background: theme.bg, padding: '6px 12px', fontSize: '11px', borderRadius: '8px', marginBottom: '4px' }}>
-                        <span>Replying to {replyTarget.user?.username || 'User'}</span>
+                        <span>Replying payload text trace...</span>
                         <FontAwesomeIcon icon={faXmark} onClick={() => setReplyTarget(null)} />
                       </div>
                     )}
@@ -1985,6 +2244,7 @@ export default function ChatRoom({ currentUser }) {
             </div>
           )}
           
+          {/* LOWER MOBILE FLOATING NAVIGATION BAR */}
           {!activeRoomId && (
             <div style={{ position: 'fixed', bottom: '16px', left: '4%', width: '92%', height: '64px', background: theme.card, borderRadius: '30px', boxShadow: '0 10px 30px rgba(0,0,0,0.25)', border: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-around', alignItems: 'center', zIndex: 99, padding: '0 8px', boxSizing: 'border-box' }}>
               {tabsConfig.map(tab => {
@@ -2011,6 +2271,7 @@ export default function ChatRoom({ currentUser }) {
           )}
         </div>
       )}
+
     </div>
   );
 }
