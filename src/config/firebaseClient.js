@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getMessaging, getToken } from "firebase/messaging";
+import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { supabase } from "./supabaseClient";
 
 // Firebase App Configuration Network Metadata Context
@@ -17,6 +17,19 @@ const app = initializeApp(firebaseConfig);
 
 // Export Web Messaging Encryption Channel Instance
 export const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
+
+export const registerFirebaseServiceWorker = async () => {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    console.warn('FCM Service Worker: serviceWorker API is not available in this runtime.');
+    return null;
+  }
+  try {
+    return await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+  } catch (error) {
+    console.error('FCM Service Worker registration failed:', error);
+    return null;
+  }
+};
 
 /**
  * Request Native Web Notification Permissions via User Gesture Trigger Protocol
@@ -45,8 +58,10 @@ export const requestNotificationPermission = async (userId) => {
       if (!messaging) return;
 
       // ၄။ Secure Firebase Messaging Device Registration Token (FCM Token) ကို ဆွဲထုတ်ယူခြင်း
+      const serviceWorkerRegistration = await registerFirebaseServiceWorker();
       const token = await getToken(messaging, { 
-        vapidKey: 'BM7DFrbO5Y4a_lQK__W3BW9WiXVG1MMq5WT-WoYo-h3x24_j75wLH7PPQeZAnSJ1oGw-bgp2vZEb0Mx82gk3chg' 
+        vapidKey: 'BM7DFrbO5Y4a_lQK__W3BW9WiXVG1MMq5WT-WoYo-h3x24_j75wLH7PPQeZAnSJ1oGw-bgp2vZEb0Mx82gk3chg',
+        serviceWorkerRegistration
       });
       
       if (token) {
@@ -67,4 +82,11 @@ export const requestNotificationPermission = async (userId) => {
   } catch (error) {
     console.error("FCM Structural Pipeline Initialization Fault Exception:", error);
   }
+};
+
+export const listenForForegroundMessages = (callback) => {
+  if (!messaging || typeof window === 'undefined') return () => {};
+  return onMessage(messaging, (payload) => {
+    if (typeof callback === 'function') callback(payload);
+  });
 };

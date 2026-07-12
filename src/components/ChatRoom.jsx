@@ -20,8 +20,12 @@ import {
 
 const emojiOptions = ['😂','😆','😊','❤️','😡','😢','🙂','😮','🤗','👍','🎉','🔥','🙌','😌','🫡','🤮','🗿'];
 const reactionOptions = ['🔥','❤️','😂','😮','😢','👍','🎉'];
-const stickerSampleBase = 'https://img-url1.netlify.app/sample-sticker-01.png';
+const stickerSampleBase = 'https://img-url1.netlify.app/rrl';
 const sampleStickerUrls = Array.from({ length: 20 }, (_, idx) => stickerSampleBase.replace('01', String(idx + 1).padStart(2, '0')));
+const brandLetters = ['I', 'M', 'A', 'G', 'I', 'N', 'A', 'R', 'Y'];
+const stickerMarker = '__STICKER__:';
+const isStickerPayload = (text) => typeof text === 'string' && text.startsWith(stickerMarker);
+const getStickerUrlFromPayload = (text) => (typeof text === 'string' && isStickerPayload(text) ? text.replace(stickerMarker, '') : '');
 const telegramBotToken = import.meta.env.VITE_TELEGRAM_BOT_TOKEN;
 const telegramChatId = import.meta.env.VITE_TELEGRAM_CHAT_ID;
 
@@ -38,42 +42,57 @@ const calculateImaginaryStreak = (messages = [], currentUserId) => {
   if (!currentUserId || !messages.length) return 0;
   const sorted = [...messages].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   let streak = 0;
-  let lastDay = null;
+  let currentDay = null;
   let dayHasCurrent = false;
   let dayHasOther = false;
-  let lastSentDate = null;
 
   for (let msg of sorted) {
     const msgDate = new Date(msg.created_at);
     const dayKey = msgDate.toISOString().slice(0, 10);
-    if (lastDay === null) {
-      lastDay = dayKey;
-      lastSentDate = msgDate;
-    }
-    if (dayKey !== lastDay) {
-      if (dayHasCurrent && dayHasOther) {
-        streak += 1;
-      } else {
-        break;
+
+    if (currentDay !== dayKey) {
+      if (currentDay !== null) {
+        if (dayHasCurrent && dayHasOther) streak += 1;
+        else break;
       }
-      lastDay = dayKey;
+      currentDay = dayKey;
       dayHasCurrent = false;
       dayHasOther = false;
     }
+
     if (msg.sender_id === currentUserId) dayHasCurrent = true;
     else dayHasOther = true;
-    const diffHours = lastSentDate ? Math.abs((lastSentDate - msgDate) / (1000 * 60 * 60)) : 0;
-    if (diffHours > 24 && streak > 0) break;
   }
-  if (dayHasCurrent && dayHasOther) streak += 1;
-  return streak;
+
+  if (currentDay && dayHasCurrent && dayHasOther) streak += 1;
+  return Math.max(streak, 0);
 };
 
 const getStreakStyle = (streak) => {
-  if (streak <= 1) return { background: 'rgba(120,128,143,0.18)', color: '#a3a3a3', text: 'Imaginary △' };
+  if (streak <= 1) return { background: 'rgba(120,128,143,0.18)', color: '#a3a3a3', text: '0' };
   if (streak <= 10) return { background: 'rgba(255,255,255,0.12)', color: '#f8fafc', text: `Imaginary ${streak}` };
-  if (streak <= 50) return { background: 'linear-gradient(90deg, #ffffff, #34c8ff)', color: '#04172a', text: `Imaginary ${streak}` };
+  if (streak <= 50) return { background: 'linear-gradient(90deg, #a97a02, #34c8ff)', color: '#04172a', text: `Imaginary ${streak}` };
+  if (streak <= 100) return { background: 'linear-gradient(90deg, #980000, #4b4c3f)', color: '#02ddff', text: `Imaginary ${streak}` };
+  if (streak <= 200) return { background: 'linear-gradient(90deg, #161de5, #01582b)', color: '#320240', text: `Imaginary ${streak}` };
+
   return { background: 'linear-gradient(90deg, #ff6ec7, #ffcc00, #00d4ff)', color: '#081018', text: `Imaginary ${streak}` };
+};
+
+const getPresenceLabel = (presence, isMe) => {
+  if (!presence) return isMe ? 'sent' : 'offline';
+  if (presence.status === 'online') return 'online';
+  if (presence.last_seen) {
+    const lastSeen = new Date(presence.last_seen);
+    return `last seen at ${lastSeen.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  }
+  return 'offline';
+};
+
+const getReadReceiptState = (msg, currentUserId, readMessageIds = []) => {
+  if (!msg || !msg.sender_id) return 'sent';
+  if (msg.sender_id !== currentUserId) return 'incoming';
+  if (readMessageIds.includes(msg.id)) return 'seen';
+  return 'sent';
 };
 
 export default function ChatRoom({ currentUser }) {
@@ -114,7 +133,7 @@ export default function ChatRoom({ currentUser }) {
   
   // Create Group Parameters Enhanced
   const [newGroupName, setNewGroupName] = useState('');
-  const [newGroupAvatarUrl, setNewGroupAvatarUrl] = useState('https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=150&h=150');
+  const [newGroupAvatarUrl, setNewGroupAvatarUrl] = useState('https://img-url1.netlify.app/default');
   const [groupSelectedUsers, setGroupSelectedUsers] = useState([]);
   const [allProfilesCache, setAllProfilesCache] = useState([]);
 
@@ -140,8 +159,10 @@ export default function ChatRoom({ currentUser }) {
     stickers: sampleStickerUrls
   }]);
   const [stickerPackName, setStickerPackName] = useState('Imaginary Pack');
+  const [stickerPackIsPublic, setStickerPackIsPublic] = useState(true);
   const [stickerUrlInput, setStickerUrlInput] = useState(stickerSampleBase);
   const [stickerCreatorStickerUrls, setStickerCreatorStickerUrls] = useState(sampleStickerUrls);
+  const [stickerSearchQuery, setStickerSearchQuery] = useState('');
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [replyTarget, setReplyTarget] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
@@ -160,6 +181,7 @@ export default function ChatRoom({ currentUser }) {
 
   // In-App Notification System State
   const [notifications, setNotifications] = useState([]);
+  const [brandLetterIndex, setBrandLetterIndex] = useState(0);
 
   // UI Reference Nodes
   const messagesEndRef = useRef(null);
@@ -173,9 +195,16 @@ export default function ChatRoom({ currentUser }) {
   const [highlightedRoomIds, setHighlightedRoomIds] = useState([]);
   const [readMessageIds, setReadMessageIds] = useState([]);
   const [typingStatus, setTypingStatus] = useState({});
+  const [typingUsersByRoom, setTypingUsersByRoom] = useState({});
   const [messageReactions, setMessageReactions] = useState({});
   const [reactionPickerTarget, setReactionPickerTarget] = useState(null);
+  const [hoveredMessageId, setHoveredMessageId] = useState(null);
+  const [messageStatuses, setMessageStatuses] = useState({});
+  const [unreadCounts, setUnreadCounts] = useState({});
   const typingTimeouts = useRef({});
+  const typingChannelRef = useRef(null);
+  const roomLongPressTimer = useRef(null);
+  const birthdayWishCacheRef = useRef(new Set());
 
   // Real-time notification synchronization references
   useEffect(() => { activeRoomIdRef.current = activeRoomId; }, [activeRoomId]);
@@ -209,6 +238,13 @@ export default function ChatRoom({ currentUser }) {
 
   // 🔔 NEW FEATURE: Real-time Global Presence System Tracking (Online/Last Seen Status Setup)
   useEffect(() => {
+    const interval = window.setInterval(() => {
+      setBrandLetterIndex(prev => (prev + 1) % brandLetters.length);
+    }, 620);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     if (!currentUser) return;
 
     const presenceChannel = supabase.channel('online-presence-hub', {
@@ -238,6 +274,46 @@ export default function ChatRoom({ currentUser }) {
 
     return () => {
       supabase.removeChannel(presenceChannel);
+    };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const typingChannel = supabase.channel('public:typing-hub');
+    typingChannelRef.current = typingChannel;
+
+    typingChannel
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (!payload || payload.user_id === currentUser.id) return;
+        setTypingUsersByRoom(prev => {
+          const roomUsers = prev[payload.room_id] || [];
+          const nextUsers = payload.typing ? [...new Set([...roomUsers, payload.user_id])] : roomUsers.filter(id => id !== payload.user_id);
+          return { ...prev, [payload.room_id]: nextUsers };
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(typingChannel);
+    };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const readsChannel = supabase.channel('public:message-reads');
+    readsChannel
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_reads' }, (payload) => {
+        const messageId = payload.new?.message_id;
+        if (messageId) {
+          setReadMessageIds(prev => (prev.includes(messageId) ? prev : [...prev, messageId]));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(readsChannel);
     };
   }, [currentUser]);
 
@@ -305,6 +381,11 @@ export default function ChatRoom({ currentUser }) {
     supabase.from('profiles').select('*').then(({ data }) => { if (data) setAllProfilesCache(data); });
     fetchRoomsList();
 
+    const savedCache = localStorage.getItem('birthday-wish-cache');
+    if (savedCache) {
+      try { birthdayWishCacheRef.current = new Set(JSON.parse(savedCache)); } catch (e) {}
+    }
+
     const messageSubscription = supabase
       .channel('public:messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
@@ -317,6 +398,7 @@ export default function ChatRoom({ currentUser }) {
               showNotification(`New message from ${currentRoomContext.displayName}`, 'success');
               triggerPushNotification(`ItalK Matrix: ${currentRoomContext.displayName}`, newMsg.content);
               setHighlightedRoomIds(prev => [...new Set([...(prev || []), newMsg.room_id])]);
+              setUnreadCounts(prev => ({ ...prev, [newMsg.room_id]: (prev[newMsg.room_id] || 0) + 1 }));
             }
           }
         }
@@ -340,6 +422,34 @@ export default function ChatRoom({ currentUser }) {
       supabase.removeChannel(roomSubscription);
     };
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser || !myProfile?.birthday) return;
+    const checkBirthdayWish = async () => {
+      const today = new Date();
+      const birthday = new Date(myProfile.birthday);
+      const key = `${today.getMonth()}-${today.getDate()}-${myProfile.id}`;
+      if (birthday.getMonth() !== today.getMonth() || birthday.getDate() !== today.getDate()) return;
+      if (birthdayWishCacheRef.current.has(key)) return;
+      birthdayWishCacheRef.current.add(key);
+      try {
+        localStorage.setItem('birthday-wish-cache', JSON.stringify([...birthdayWishCacheRef.current]));
+      } catch (e) {}
+      try {
+        const { data: botRoom } = await supabase.from('chat_rooms').select('*').eq('is_bot_channel', true).maybeSingle();
+        if (botRoom) {
+          await supabase.from('messages').insert([{ room_id: botRoom.id, sender_id: null, content: `🎉 Happy birthday, ${myProfile.username}! Your day is special, and this message is sent with warm wishes and a bright, joyful celebration from the ItalK community.`, is_bot_generated: true }]);
+          showNotification('Birthday wishes sent to your celebration channel.', 'success');
+        }
+      } catch (e) {
+        console.warn('Birthday wish failed', e);
+      }
+    };
+
+    const timer = window.setInterval(checkBirthdayWish, 60000);
+    checkBirthdayWish();
+    return () => window.clearInterval(timer);
+  }, [currentUser, myProfile?.birthday, myProfile?.id, myProfile?.username]);
 
   const fetchOrCreateProfile = async () => {
     try {
@@ -631,6 +741,27 @@ export default function ChatRoom({ currentUser }) {
     return () => { mounted = false; };
   }, [previewRoomId, rooms]);
 
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .or(`username.ilike.%${query}%,unique_id.ilike.%${query}%`)
+          .order('username', { ascending: true });
+        if (!error) setSearchResults(data || []);
+      } catch (err) {
+        console.warn('Search debounce failed', err);
+      }
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
   const handleGlobalSearch = async () => {
     try {
       const query = searchQuery.trim();
@@ -810,10 +941,155 @@ export default function ChatRoom({ currentUser }) {
   const handleRoomContextMenu = (e, roomId) => {
     e.preventDefault();
     setActiveMenuRoomId(roomId);
-    const clickX = e.clientX > window.innerWidth - 200 ? e.clientX - 180 : e.clientX;
-    const clickY = e.clientY > window.innerHeight - 180 ? e.clientY - 150 : e.clientY;
-    setActiveMenuMessageId(null); 
+    const clickX = e.clientX > window.innerWidth - 220 ? e.clientX - 200 : e.clientX;
+    const clickY = e.clientY > window.innerHeight - 220 ? e.clientY - 200 : e.clientY;
+    setActiveMenuMessageId(null);
     setRoomMenuPosition({ x: clickX, y: clickY });
+  };
+
+  const handleRoomLongPress = (roomId) => {
+    clearTimeout(roomLongPressTimer.current);
+    roomLongPressTimer.current = window.setTimeout(() => {
+      setActiveMenuRoomId(roomId);
+      const targetRoom = rooms.find(r => r.id === roomId);
+      if (targetRoom) {
+        setPreviewRoomId(roomId);
+        setPreviewRoomName(targetRoom.displayName || 'Preview');
+      }
+      setHighlightedRoomIds(prev => [...new Set([...prev, roomId])]);
+    }, 220);
+  };
+
+  const openPreviewForRoom = (roomId) => {
+    const targetRoom = rooms.find(r => r.id === roomId);
+    if (targetRoom) {
+      setPreviewRoomId(roomId);
+      setPreviewRoomName(targetRoom.displayName || 'Preview');
+    }
+    setActiveMenuRoomId(null);
+  };
+
+  const toggleReactionPicker = (messageId) => {
+    setReactionPickerTarget(prev => (prev === messageId ? null : messageId));
+  };
+
+  const renderMessageReactions = (msg) => {
+    const reactions = messageReactions[msg.id] || {};
+    const summary = Object.values(reactions).reduce((acc, emoji) => {
+      acc[emoji] = (acc[emoji] || 0) + 1;
+      return acc;
+    }, {});
+    const myReaction = reactions[currentUser.id];
+    const isOpen = reactionPickerTarget === msg.id;
+    const isMe = msg.sender_id === currentUser.id;
+    const pickerAnchor = isMe ? { right: 0, left: 'auto' } : { left: 0, right: 'auto' };
+
+    return (
+      <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-start', width: '100%' }}>
+        {Object.keys(summary).length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+            {Object.entries(summary).map(([emoji, count]) => (
+              <span key={emoji} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '999px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '12px', boxShadow: '0 4px 10px rgba(0,0,0,0.05)' }}>
+                {emoji} {count}
+              </span>
+            ))}
+          </div>
+        )}
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', width: '100%' }}>
+          <button
+            type="button"
+            onClick={() => toggleReactionPicker(msg.id)}
+            style={{
+              border: `1px solid ${isOpen ? theme.accent : 'transparent'}`,
+              background: isOpen ? theme.accentLight : (darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.04)'),
+              color: theme.text,
+              padding: isMobile ? '7px 10px' : '8px 12px',
+              borderRadius: '999px',
+              cursor: 'pointer',
+              fontSize: isMobile ? '11px' : '12px',
+              fontWeight: '700',
+              boxShadow: isOpen ? `0 8px 20px ${theme.accent}22` : 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              whiteSpace: 'nowrap',
+              minHeight: isMobile ? '30px' : '34px'
+            }}
+          >
+            <span style={{ fontSize: isMobile ? '12px' : '13px' }}>{myReaction || '✨'}</span>
+            <span>{isOpen ? 'Close' : (myReaction ? `You • ${myReaction}` : (isMobile ? 'React' : 'Add reaction'))}</span>
+          </button>
+          {isOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.18 }}
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                ...pickerAnchor,
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: isMobile ? '6px' : '8px',
+                padding: isMobile ? '10px 12px' : '10px 14px',
+                background: theme.floatingBg,
+                border: `1px solid ${theme.border}`,
+                borderRadius: isMobile ? '999px' : '18px',
+                boxShadow: '0 18px 36px rgba(0,0,0,0.16)',
+                zIndex: 40,
+                maxWidth: isMobile ? 'min(92vw, 340px)' : '320px',
+                overflowX: 'auto',
+                WebkitOverflowScrolling: 'touch'
+              }}
+            >
+              {reactionOptions.map(emoji => {
+                const active = myReaction === emoji;
+                return (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => {
+                      const nextReactions = { ...messageReactions[msg.id] };
+                      if (nextReactions[currentUser.id] === emoji) {
+                        delete nextReactions[currentUser.id];
+                        showNotification('Reaction removed');
+                      } else {
+                        nextReactions[currentUser.id] = emoji;
+                        showNotification(`Reacted with ${emoji}`);
+                      }
+                      setMessageReactions(prev => ({ ...prev, [msg.id]: nextReactions }));
+                      setReactionPickerTarget(null);
+                    }}
+                    style={{
+                      border: 'none',
+                      background: active ? theme.accent : (darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.05)'),
+                      color: active ? '#fff' : theme.text,
+                      width: isMobile ? '36px' : '34px',
+                      height: isMobile ? '36px' : '34px',
+                      borderRadius: '50%',
+                      cursor: 'pointer',
+                      fontSize: isMobile ? '18px' : '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: active ? `0 6px 14px ${theme.accent}28` : 'none',
+                      flexShrink: 0
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                );
+              })}
+            </motion.div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const clearRoomLongPress = () => {
+    clearTimeout(roomLongPressTimer.current);
   };
 
   const togglePinRoomState = async (roomId, currentPinStatus) => {
@@ -1123,6 +1399,10 @@ export default function ChatRoom({ currentUser }) {
     mobileInputRef.current?.blur();
   };
 
+  const handleEmojiButtonClick = () => {
+    handleTogglePicker('emojis');
+  };
+
   const handleClosePicker = () => {
     setIsEmojiPickerOpen(false);
   };
@@ -1132,9 +1412,26 @@ export default function ChatRoom({ currentUser }) {
     handleClosePicker();
   };
 
-  const handleSelectSticker = (stickerUrl) => {
-    setNewMessage(prev => prev ? `${prev} ${stickerUrl}` : stickerUrl);
-    handleClosePicker();
+  const handleSelectSticker = async (stickerUrl) => {
+    if (!stickerUrl || !activeRoomId) return;
+    try {
+      const payload = {
+        room_id: activeRoomId,
+        sender_id: currentUser.id,
+        content: `${stickerMarker}${stickerUrl}`
+      };
+      const { error } = await supabase.from('messages').insert([payload]);
+      if (error) throw error;
+      setIsEmojiPickerOpen(false);
+      setShowStickerCreator(false);
+      setPickerTab('emojis');
+      setReplyTarget(null);
+      setEditTarget(null);
+      fetchMessagesForRoom(activeRoomId);
+      showNotification('Sticker sent', 'success');
+    } catch (err) {
+      showNotification('Sticker send failed: ' + err.message, 'error');
+    }
   };
 
   const handleCreateStickerPack = () => {
@@ -1153,6 +1450,15 @@ export default function ChatRoom({ currentUser }) {
     if (!url) return;
     setStickerCreatorStickerUrls(prev => [url, ...prev].slice(0, 20));
     setStickerUrlInput(stickerSampleBase);
+  };
+
+  const handleRemoveStickerPack = (packId) => {
+    if (packId === 'imaginary-sampler') return;
+    setStickerPacks(prev => prev.filter(pack => pack.id !== packId));
+    if (selectedStickerPackId === packId) {
+      setSelectedStickerPackId('imaginary-sampler');
+    }
+    showNotification('Sticker pack removed', 'success');
   };
 
   const handleLoadSampleStickerUrls = () => {
@@ -1175,12 +1481,14 @@ export default function ChatRoom({ currentUser }) {
     const newPack = {
       id: `pack-${Date.now()}`,
       name: packName,
+      isPublic: stickerPackIsPublic,
       stickers: stickerCreatorStickerUrls.slice(0, 20)
     };
     setStickerPacks(prev => [newPack, ...prev]);
     setSelectedStickerPackId(newPack.id);
     setShowStickerCreator(false);
     setIsEmojiPickerOpen(false);
+    setStickerPackIsPublic(true);
     showNotification(`Sticker pack "${packName}" created successfully.`, 'success');
   };
 
@@ -1196,21 +1504,30 @@ export default function ChatRoom({ currentUser }) {
     if (!isEmojiPickerOpen || currentActiveRoomData?.is_bot_channel) return null;
 
     const selectedPack = stickerPacks.find(pack => pack.id === selectedStickerPackId) || stickerPacks[0];
+    const visiblePacks = stickerPacks.filter(pack => {
+      const matchesSearch = pack.name.toLowerCase().includes(stickerSearchQuery.toLowerCase());
+      if (!stickerSearchQuery.trim()) return true;
+      return matchesSearch;
+    });
 
     return (
-      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ background: theme.card, borderRadius: '20px', padding: '16px 16px 10px', marginTop: '10px', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.12)' }}>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }} style={{ background: theme.card, borderRadius: '20px', padding: '14px 14px 10px', marginTop: '10px', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.12)', maxHeight: isMobile ? '72vh' : '420px', overflowY: 'auto' }}>
         {showStickerCreator ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: theme.text }}>Create Sticker Pack</h4>
-                <p style={{ margin: '4px 0 0', color: theme.subText, fontSize: '12px' }}>Enter a pack name and add URLs or load the sample pack instantly.</p>
+                <p style={{ margin: '4px 0 0', color: theme.subText, fontSize: '12px' }}>Create a pack for yourself, or make it public so it appears in discovery.</p>
               </div>
               <button type="button" onClick={() => setShowStickerCreator(false)} style={{ background: 'none', border: 'none', color: theme.accent, fontSize: '14px', cursor: 'pointer' }}>Close</button>
             </div>
-            <input type="text" value={stickerPackName} onChange={e => setStickerPackName(e.target.value)} placeholder="Pack Name" style={{ width: '100%', padding: '12px', borderRadius: '14px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, outline: 'none' }} />
+            <input type="text" value={stickerPackName} onChange={e => setStickerPackName(e.target.value)} placeholder="Pack Name" style={{ width: '100%', padding: '12px', borderRadius: '14px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, outline: 'none', boxSizing: 'border-box' }} />
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: '14px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '13px' }}>
+              <span>Make this pack public / trending</span>
+              <input type="checkbox" checked={stickerPackIsPublic} onChange={e => setStickerPackIsPublic(e.target.checked)} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
+            </label>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <input type="url" value={stickerUrlInput} onChange={e => setStickerUrlInput(e.target.value)} placeholder="Sticker URL" style={{ flex: 1, padding: '12px', borderRadius: '14px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, outline: 'none' }} />
+              <input type="url" value={stickerUrlInput} onChange={e => setStickerUrlInput(e.target.value)} placeholder="Sticker URL" style={{ flex: 1, minWidth: '180px', padding: '12px', borderRadius: '14px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, outline: 'none' }} />
               <button type="button" onClick={handleAddStickerUrl} style={{ padding: '12px 16px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '14px', cursor: 'pointer' }}>Add</button>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -1226,29 +1543,55 @@ export default function ChatRoom({ currentUser }) {
           </div>
         ) : (
           <>
-            <div style={{ minHeight: '120px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))', gap: '10px' }}>
-              {pickerTab === 'emojis' ? emojiOptions.map(emoji => (
-                <button key={emoji} type="button" onClick={() => handleSelectEmoji(emoji)} style={{ padding: '12px', borderRadius: '16px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '20px', cursor: 'pointer' }}>{emoji}</button>
-              )) : selectedPack?.stickers?.map(sticker => (
-                <button key={sticker} type="button" onClick={() => handleSelectSticker(sticker)} style={{ padding: '0', borderRadius: '16px', border: `1px solid ${theme.border}`, background: theme.bg, cursor: 'pointer', overflow: 'hidden' }}>
-                  <img src={sticker} alt="sticker" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                </button>
-              ))}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', padding: '12px 12px 8px', background: theme.bg, borderRadius: '16px', border: `1px solid ${theme.border}`, boxShadow: '0 12px 24px rgba(0,0,0,0.08)' }}>
-              <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
                 <button type="button" onClick={() => setPickerTab('emojis')} style={{ padding: '10px 14px', borderRadius: '14px', border: 'none', background: pickerTab === 'emojis' ? theme.accent : theme.card, color: pickerTab === 'emojis' ? '#fff' : theme.text, cursor: 'pointer' }}>Emojis</button>
                 <button type="button" onClick={() => { setPickerTab('stickers'); setShowStickerCreator(false); }} style={{ padding: '10px 14px', borderRadius: '14px', border: 'none', background: pickerTab === 'stickers' ? theme.accent : theme.card, color: pickerTab === 'stickers' ? '#fff' : theme.text, cursor: 'pointer' }}>Stickers</button>
               </div>
               {pickerTab === 'stickers' && (
-                <button type="button" onClick={handleCreateStickerPack} style={{ padding: '10px 14px', borderRadius: '14px', border: '1px solid rgba(0,122,255,0.2)', background: theme.card, color: theme.text, cursor: 'pointer' }}>+ Create Pack</button>
+                <button type="button" onClick={handleCreateStickerPack} style={{ padding: '10px 14px', borderRadius: '14px', border: '1px solid rgba(0,122,255,0.2)', background: theme.card, color: theme.text, cursor: 'pointer' }}>+ Add Pack</button>
               )}
             </div>
             {pickerTab === 'stickers' && (
-              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', marginTop: '10px', paddingBottom: '4px' }}>
-                {stickerPackOptions.map(pack => (
-                  <button key={pack.id} type="button" onClick={() => handleSelectStickerPack(pack.id)} style={{ whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: '14px', border: pack.id === selectedStickerPackId ? `1px solid ${theme.accent}` : `1px solid ${theme.border}`, background: pack.id === selectedStickerPackId ? theme.accentLight : theme.card, color: pack.id === selectedStickerPackId ? theme.accent : theme.text, cursor: 'pointer' }}>{pack.name}</button>
-                ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
+                <input type="text" value={stickerSearchQuery} onChange={e => setStickerSearchQuery(e.target.value)} placeholder="Search sticker packs" style={{ width: '100%', padding: '10px 12px', borderRadius: '12px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, outline: 'none', boxSizing: 'border-box' }} />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {visiblePacks.filter(pack => pack.isPublic).length > 0 && (
+                    <span style={{ fontSize: '11px', fontWeight: '800', color: theme.subText, textTransform: 'uppercase', width: '100%' }}>Trending / Public</span>
+                  )}
+                  {visiblePacks.filter(pack => pack.isPublic).map(pack => (
+                    <button key={pack.id} type="button" onClick={() => handleSelectStickerPack(pack.id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: '14px', border: pack.id === selectedStickerPackId ? `1px solid ${theme.accent}` : `1px solid ${theme.border}`, background: pack.id === selectedStickerPackId ? theme.accentLight : theme.card, color: pack.id === selectedStickerPackId ? theme.accent : theme.text, cursor: 'pointer' }}>
+                      <span>{pack.name}</span>
+                      <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: theme.bg, color: theme.subText }}>Public</span>
+                    </button>
+                  ))}
+                  {visiblePacks.filter(pack => !pack.isPublic).length > 0 && (
+                    <span style={{ fontSize: '11px', fontWeight: '800', color: theme.subText, textTransform: 'uppercase', width: '100%', marginTop: '2px' }}>My Packs</span>
+                  )}
+                  {visiblePacks.filter(pack => !pack.isPublic).map(pack => (
+                    <button key={pack.id} type="button" onClick={() => handleSelectStickerPack(pack.id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: '14px', border: pack.id === selectedStickerPackId ? `1px solid ${theme.accent}` : `1px solid ${theme.border}`, background: pack.id === selectedStickerPackId ? theme.accentLight : theme.card, color: pack.id === selectedStickerPackId ? theme.accent : theme.text, cursor: 'pointer' }}>
+                      <span>{pack.name}</span>
+                      <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: theme.bg, color: theme.subText }}>Private</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ minHeight: '120px', display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3, minmax(0,1fr))' : 'repeat(auto-fill, minmax(88px, 1fr))', gap: '10px' }}>
+              {pickerTab === 'emojis' ? emojiOptions.map(emoji => (
+                <button key={emoji} type="button" onClick={() => handleSelectEmoji(emoji)} style={{ padding: '12px', borderRadius: '16px', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '20px', cursor: 'pointer', minHeight: isMobile ? '54px' : '58px' }}>{emoji}</button>
+              )) : (selectedPack?.stickers || []).map((sticker, index) => (
+                <button key={`${sticker}-${index}`} type="button" onClick={() => handleSelectSticker(sticker)} style={{ padding: '0', borderRadius: '16px', border: `1px solid ${theme.border}`, background: theme.bg, cursor: 'pointer', overflow: 'hidden', minHeight: isMobile ? '84px' : '96px' }}>
+                  <img src={sticker} alt="sticker" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                </button>
+              ))}
+            </div>
+            {pickerTab === 'stickers' && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
+                <span style={{ fontSize: '12px', color: theme.subText }}>Tap a sticker to send instantly.</span>
+                {selectedPack && selectedPack.id !== 'imaginary-sampler' && (
+                  <button type="button" onClick={() => handleRemoveStickerPack(selectedPack.id)} style={{ border: 'none', background: 'transparent', color: '#ff3b30', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>Remove Pack</button>
+                )}
               </div>
             )}
           </>
@@ -1354,15 +1697,38 @@ export default function ChatRoom({ currentUser }) {
 
     if (!activeRoomId) return;
     setTypingStatus(prev => ({ ...prev, [activeRoomId]: 'typing' }));
+    typingChannelRef.current?.send({ type: 'broadcast', event: 'typing', payload: { room_id: activeRoomId, user_id: currentUser.id, typing: true } });
     clearTimeout(typingTimeouts.current[activeRoomId]);
     typingTimeouts.current[activeRoomId] = window.setTimeout(() => {
       setTypingStatus(prev => ({ ...prev, [activeRoomId]: 'idle' }));
+      typingChannelRef.current?.send({ type: 'broadcast', event: 'typing', payload: { room_id: activeRoomId, user_id: currentUser.id, typing: false } });
     }, 1200);
   };
 
   const typedIndicator = activeRoomId ? typingStatus[activeRoomId] === 'typing' : false;
 
   const renderMessageContent = (text) => {
+    if (isStickerPayload(text)) {
+      const stickerUrl = getStickerUrlFromPayload(text);
+      return (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%' }}>
+          <img
+            src={stickerUrl}
+            alt="sticker"
+            style={{
+              maxWidth: isMobile ? '78vw' : '260px',
+              width: 'auto',
+              maxHeight: isMobile ? '220px' : '280px',
+              borderRadius: '20px',
+              objectFit: 'contain',
+              display: 'block',
+              boxShadow: '0 12px 26px rgba(0,0,0,0.16)'
+            }}
+          />
+        </div>
+      );
+    }
+
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const imageRegex = /\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i;
     if (!urlRegex.test(text)) return text;
@@ -1397,18 +1763,19 @@ export default function ChatRoom({ currentUser }) {
   // NEW FEATURE METHOD: Real-time Header Status presence helper string generator
   const getRoomPresenceSubheaderText = () => {
     if (!currentActiveRoomData) return '';
-    if (currentActiveRoomData.is_bot_channel) return 'Official Automated System System Channel';
+    if (currentActiveRoomData.is_bot_channel) return 'Official Automated System Channel';
     if (currentActiveRoomData.type === 'group') return `Group Channel • ${roomMembers.length} active roles`;
-    
-    // Direct Personal Presence Sync Trace Tracker
+
     const alternateMember = currentActiveRoomData.room_members?.find(m => m.user_id !== currentUser.id);
     if (!alternateMember) return 'Secure cloud buffer loop';
-    
+
+    const activeTypingUsers = (typingUsersByRoom[activeRoomId] || []).filter(id => id !== currentUser.id);
     const statusObj = userPresenceList[alternateMember.user_id];
+    if (activeTypingUsers.length > 0) return 'typing...';
     if (statusObj?.status === 'online') {
-      return '🟢 Online Encryption Sockets';
+      return `${targetPersonalProfile.unique_id} ${getPresenceLabel(statusObj, false) || 'online'}`;
     }
-    return '⚪ Offline • Secure Node Sync';
+    return ` ${targetPersonalProfile.unique_id} ${statusObj?.last_seen ? getPresenceLabel(statusObj, false) : 'offline'}`;
   };
 
   const renderRoomListItems = (list) => {
@@ -1416,19 +1783,29 @@ export default function ChatRoom({ currentUser }) {
     return list.map(room => {
       const isSelected = activeRoomId === room.id;
       const isMenuSelected = activeMenuRoomId === room.id;
+      const roomUnread = unreadCounts[room.id] || 0;
+      const isGlowing = highlightedRoomIds.includes(room.id) || roomUnread > 0;
+      const roomTypingUsers = (typingUsersByRoom[room.id] || []).filter(id => id !== currentUser.id);
+      const streakStyle = room.imaginaryStreak > 0 ? getStreakStyle(room.imaginaryStreak) : null;
       return (
         <div
           key={room.id}
-          onClick={() => { setActiveRoomId(room.id); fetchMessagesForRoom(room.id); setIsViewingInfo(false); }}
+          onClick={() => { clearRoomLongPress(); setActiveRoomId(room.id); setUnreadCounts(prev => ({ ...prev, [room.id]: 0 })); setHighlightedRoomIds(prev => prev.filter(id => id !== room.id)); fetchMessagesForRoom(room.id); setIsViewingInfo(false); }}
           onContextMenu={(e) => handleRoomContextMenu(e, room.id)}
+          onMouseDown={() => handleRoomLongPress(room.id)}
+          onMouseUp={clearRoomLongPress}
+          onMouseLeave={clearRoomLongPress}
+          onTouchStart={() => handleRoomLongPress(room.id)}
+          onTouchEnd={clearRoomLongPress}
           style={{
             display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '14px',
-            cursor: 'pointer', background: isSelected || isMenuSelected ? theme.accentLight : 'transparent',
+            cursor: 'pointer', background: isSelected || isMenuSelected ? theme.accentLight : (isGlowing ? 'rgba(0, 122, 255, 0.08)' : 'transparent'),
             transition: 'background 0.15s, transform 0.12s, box-shadow 0.12s', marginBottom: '8px', position: 'relative',
             borderLeft: room.isPinned ? `4px solid ${theme.accent}` : 'none',
             transform: isMenuSelected ? 'translateY(-6px)' : 'none',
-            boxShadow: isMenuSelected ? `0 10px 30px rgba(0,0,0,0.18)` : 'none',
-            zIndex: isMenuSelected ? 9992 : 'auto'
+            boxShadow: isMenuSelected ? `0 12px 28px rgba(0,122,255,0.16)` : (isGlowing ? `0 10px 24px rgba(0,122,255,0.12)` : 'none'),
+            zIndex: isMenuSelected ? 9992 : 'auto',
+            outline: isGlowing ? `1px solid ${theme.accent}35` : 'none'
           }}
         >
           <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(room.displayName), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontWeight: '700', fontSize: '14px', overflow: 'hidden', flexShrink: 0 }}>
@@ -1448,10 +1825,19 @@ export default function ChatRoom({ currentUser }) {
               <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
                 {room.isMuted && <FontAwesomeIcon icon={faVolumeMute} style={{ fontSize: '11px', color: theme.subText }} />}
                 {room.isPinned && <FontAwesomeIcon icon={faThumbtack} style={{ fontSize: '11px', color: theme.accent }} />}
+                {streakStyle && (
+                  <span style={{ padding: '2px 8px', borderRadius: '999px', background: streakStyle.background, color: streakStyle.color, fontSize: '10px', fontWeight: '800', boxShadow: '0 6px 16px rgba(0,0,0,0.14)', whiteSpace: 'nowrap' }}>{streakStyle.text}</span>
+                )}
+                {roomUnread > 0 && (
+                  <motion.span initial={{ scale: 0.96 }} animate={{ scale: [1, 1.04, 1] }} transition={{ repeat: Infinity, repeatDelay: 1.2, duration: 0.8 }} style={{ minWidth: '20px', height: '20px', borderRadius: '999px', background: 'linear-gradient(135deg, #ff3b30, #ff9500)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '800', padding: '0 6px' }}>{roomUnread}</motion.span>
+                )}
                 <span style={{ fontSize: '11px', color: theme.subText }}>{room.lastMessageTime}</span>
               </div>
             </div>
-            <p style={{ fontSize: '13px', color: theme.subText, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0 }}>{room.lastMessage}</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+              <p style={{ fontSize: '13px', color: isGlowing ? theme.text : theme.subText, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0, fontWeight: isGlowing ? 700 : 500 }}>{room.lastMessage}</p>
+              {roomTypingUsers.length > 0 && <span style={{ fontSize: '11px', color: theme.accent, fontWeight: 700 }}>typing…</span>}
+            </div>
           </div>
         </div>
       );
@@ -1602,16 +1988,16 @@ export default function ChatRoom({ currentUser }) {
               )}
             </h2>
             <br />
-            {!isGroup && targetPersonalProfile && <span style={{ color: theme.accent, fontSize: '14px', fontWeight: '600' }}>Token ID: {targetPersonalProfile.unique_id}</span>}
+            {!isGroup && targetPersonalProfile && <span style={{ color: theme.accent, fontSize: '14px', fontWeight: '600' }}> ID: {targetPersonalProfile.unique_id}</span>}
             {isGroup && <span style={{ color: theme.subText, fontSize: '13px' }}>Group Broadcast Channel ({roomMembers.length} members)</span>}
           </div>
 
           <div style={{ display: 'flex', gap: '14px', width: '100%', maxWidth: '400px' }}>
             <button onClick={() => { setIsViewingInfo(false); setIsSearchingChat(true); }} style={{ flex: 1, padding: '12px', borderRadius: '14px', background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, display: 'flex', flexDirection: 'column', fontStyle: 'normal', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-              <FontAwesomeIcon icon={faSearch} style={{ color: theme.accent, fontSize: '16px' }} /> <span style={{ fontSize: '11px', fontWeight: '700' }}>Search Log</span>
+              <FontAwesomeIcon icon={faSearch} style={{ color: theme.accent, fontSize: '16px' }} /> <span style={{ fontSize: '11px', fontWeight: '700' }}>Search </span>
             </button>
             <button onClick={toggleMuteRoom} style={{ flex: 1, padding: '12px', borderRadius: '14px', background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-              <FontAwesomeIcon icon={isMuted ? faVolumeMute : faVolumeUp} style={{ color: isMuted ? '#ff9500' : theme.accent, fontSize: '16px' }} /> <span style={{ fontSize: '11px', fontWeight: '700' }}>{isMuted ? 'Unmute Alerts' : 'Mute Alerts'}</span>
+              <FontAwesomeIcon icon={isMuted ? faVolumeMute : faVolumeUp} style={{ color: isMuted ? '#ff9500' : theme.accent, fontSize: '16px' }} /> <span style={{ fontSize: '11px', fontWeight: '700' }}>{isMuted ? 'Unmute ' : 'Mute '}</span>
             </button>
             {isGroup && (
               <button onClick={executeLeaveRoom} style={{ flex: 1, padding: '12px', borderRadius: '14px', background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.2)', color: '#ff3b30', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
@@ -1655,7 +2041,7 @@ export default function ChatRoom({ currentUser }) {
               <div style={{ height: '1px', background: theme.border }} />
               <div>
                 <span style={{ fontSize: '11px', fontWeight: '800', color: theme.subText, letterSpacing: '0.3px' }}>BIRTHDAY STAMP</span>
-                <p style={{ margin: '4px 0 0 0', fontSize: '14.5px', color: theme.text }}><FontAwesomeIcon icon={faCalendarAlt} style={{ marginRight: '6px', opacity: 0.7 }} /> {targetPersonalProfile.privacy_birthday === 'public' ? targetPersonalProfile.birthday : '🔒 Vault Isolated Matrix Content'}</p>
+                <p style={{ margin: '4px 0 0 0', fontSize: '14.5px', color: theme.text }}><FontAwesomeIcon icon={faCalendarAlt} style={{ marginRight: '6px', opacity: 0.7 }} /> {targetPersonalProfile.privacy_birthday === 'public' ? targetPersonalProfile.birthday : ' Vault Isolated Matrix Content'}</p>
               </div>
             </div>
           )}
@@ -1830,6 +2216,34 @@ export default function ChatRoom({ currentUser }) {
 
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', background: theme.bg, color: theme.text, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', overflow: 'hidden', position: 'relative' }}>
+      <AnimatePresence>
+        {previewRoomId && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPreviewRoomId(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1300, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}>
+            <motion.div onClick={(e) => e.stopPropagation()} initial={{ scale: 0.96, opacity: 0, y: isMobile ? 30 : 0 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.96, opacity: 0, y: isMobile ? 30 : 0 }} style={{ width: isMobile ? '100%' : 'min(560px, 100%)', height: isMobile ? '88vh' : 'auto', maxHeight: isMobile ? '88vh' : '70vh', overflow: 'hidden', background: theme.card, borderRadius: isMobile ? '24px 24px 0 0' : '24px', border: `1px solid ${theme.border}`, boxShadow: theme.shadow, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 16px 12px', borderBottom: `1px solid ${theme.border}` }}>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: '800', color: theme.accent, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Live chat preview</div>
+                  <h4 style={{ margin: '2px 0 0', fontSize: '16px' }}>{previewRoomName || 'Preview'}</h4>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => { setActiveRoomId(previewRoomId); setIsViewingInfo(false); setPreviewRoomId(null); fetchMessagesForRoom(previewRoomId); }} style={{ border: 'none', borderRadius: '999px', padding: '8px 12px', background: theme.accent, color: '#fff', cursor: 'pointer', fontWeight: '700' }}>Open</button>
+                  <button onClick={() => setPreviewRoomId(null)} style={{ border: 'none', background: 'transparent', color: theme.subText, cursor: 'pointer' }}>Close</button>
+                </div>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {previewMessages.length === 0 ? (
+                  <div style={{ color: theme.subText, fontSize: '13px', padding: '12px', background: theme.bg, borderRadius: '12px', border: `1px solid ${theme.border}` }}>No recent messages yet for this chat.</div>
+                ) : previewMessages.slice(-8).map(msg => (
+                  <div key={msg.id} style={{ background: theme.bg, borderRadius: '12px', padding: '10px 12px', border: `1px solid ${theme.border}` }}>
+                    <div style={{ fontSize: '11px', color: theme.subText, marginBottom: '4px', fontWeight: '700' }}>{msg.profiles?.username || 'System'}</div>
+                    <div style={{ fontSize: '13px', color: theme.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       {/* 🔔 NEW FEATURE: Context Menu Backdrop Glassmorphism Blur Filter Overlay Container */}
       <AnimatePresence>
@@ -1871,7 +2285,7 @@ export default function ChatRoom({ currentUser }) {
                   <button onClick={() => toggleMuteRoomState(targetMenuRoom.id, targetMenuRoom.isMuted)} style={{ background: 'none', border: 'none', color: theme.text, padding: '10px 12px', borderRadius: '8px', textAlign: 'left', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width:'100%' }}>
                     <FontAwesomeIcon icon={targetMenuRoom.isMuted ? faVolumeUp : faVolumeMute} style={{ width: '14px', color:'#ff9500' }} /> {targetMenuRoom.isMuted ? 'Unmute Alerts' : 'Mute Room Alerts'}
                   </button>
-                  <button onClick={() => { setPreviewRoomId(targetMenuRoom.id); setActiveMenuRoomId(null); }} style={{ background: 'none', border: 'none', color: theme.text, padding: '10px 12px', borderRadius: '8px', textAlign: 'left', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width:'100%' }}>
+                  <button onClick={() => openPreviewForRoom(targetMenuRoom.id)} style={{ background: 'none', border: 'none', color: theme.text, padding: '10px 12px', borderRadius: '8px', textAlign: 'left', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', width:'100%' }}>
                     <FontAwesomeIcon icon={faSearch} style={{ width: '14px', color: theme.subText }} /> Preview Chat
                   </button>
                   {/* 🔔 NEW FEATURE: Destructive Clean Wipe Chat History Option inside Long press option bar */}
@@ -1933,7 +2347,10 @@ export default function ChatRoom({ currentUser }) {
           <div style={{ width: '380px', height: '100%', borderRight: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', background: theme.card }}>
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', borderBottom: `1px solid ${theme.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '24px', fontWeight: '800', color: theme.accent, letterSpacing: '-0.5px' }}>ItalK</span>
+                <span style={{ fontSize: '24px', fontWeight: '800', color: theme.accent, letterSpacing: '-0.5px', display: 'inline-flex', alignItems: 'center', minHeight: '28px', gap: '2px' }}>
+                  <motion.span key={brandLetterIndex} initial={{ opacity: 0.2, y: 2, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.16 }} style={{ display: 'inline-block', textShadow: '0 0 12px rgba(90,200,250,0.5)', filter: 'drop-shadow(0 0 8px rgba(0,122,255,0.3))' }}>{brandLetters[brandLetterIndex]}</motion.span>
+                  <span style={{ display: 'inline-block', textShadow: '0 0 10px rgba(90,200,250,0.25)' }}>talK</span>
+                </span>
                 <div style={{ display: 'flex', gap: '14px', color: theme.subText, alignItems: 'center' }}>
                   {tabsConfig.map(tb => (
                     <FontAwesomeIcon 
@@ -2152,7 +2569,7 @@ export default function ChatRoom({ currentUser }) {
               isViewingInfo ? renderInfoPage() : (
                 <>
                   {/* FLOATING HEADER CARD BLOCK */}
-                  <div style={{ position: 'absolute', top: '16px', left: '20px', right: '20px', height: '70px', border: `1px solid ${theme.border}`, background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', zIndex: 100, boxShadow: theme.shadow }}>
+                  <div style={{ position: 'absolute', top: '16px', left: '24px', right: '24px', height: '70px', border: `1px solid ${theme.border}`, background: theme.floatingBg, backdropFilter: 'blur(16px)', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', zIndex: 120, boxShadow: theme.shadow }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => setIsViewingInfo(true)}>
                       <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: getRandomColor(currentActiveRoomData.displayName), display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontWeight: '800', fontSize: '15px', overflow:'hidden', flexShrink:0 }}>
                         {currentActiveRoomData.displayAvatar && currentActiveRoomData.displayAvatar !== "" ? <img src={currentActiveRoomData.displayAvatar} style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : currentActiveRoomData.displayName?.charAt(0).toUpperCase()}
@@ -2176,9 +2593,10 @@ export default function ChatRoom({ currentUser }) {
                     
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       {isSearchingChat ? (
-                        <div style={{ display: 'flex', alignItems: 'center', background: theme.bg, borderRadius: '8px', padding: '2px 8px', marginRight: '6px', border: `1px solid ${theme.border}` }}>
-                          <input type="text" placeholder="Search node logs..." value={chatSearchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ border: 'none', background: 'none', color: theme.text, outline: 'none', fontSize: '12px', width: '120px' }} />
-                          <FontAwesomeIcon icon={faXmark} style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => { setIsSearchingChat(false); setChatSearchQuery(''); }} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: theme.bg, borderRadius: '999px', padding: '4px 8px', marginRight: '6px', border: `1px solid ${theme.border}`, minWidth: '176px', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)' }}>
+                          <FontAwesomeIcon icon={faSearch} style={{ color: theme.accent, fontSize: '12px' }} />
+                          <input type="text" placeholder="Search message trace..." value={chatSearchQuery} onChange={e => setChatSearchQuery(e.target.value)} style={{ border: 'none', background: 'none', color: theme.text, outline: 'none', fontSize: '12px', width: '120px' }} />
+                          {chatSearchQuery && <FontAwesomeIcon icon={faXmark} style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => { setChatSearchQuery(''); }} />}
                         </div>
                       ) : (
                         <button onClick={() => setIsSearchingChat(true)} style={{ background: 'none', border: 'none', color: theme.text, fontSize: '16px', cursor: 'pointer', padding: '8px' }}><FontAwesomeIcon icon={faSearch} /></button>
@@ -2219,7 +2637,12 @@ export default function ChatRoom({ currentUser }) {
                   )}
 
                   {/* SCROLLABLE CONVERSATION SCROLLER PACKETS GRID */}
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '105px 24px 100px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '122px 24px 152px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {chatSearchQuery.trim() && filteredMessages.length === 0 && (
+                      <div style={{ padding: '14px', borderRadius: '14px', background: theme.bg, border: `1px dashed ${theme.border}`, color: theme.subText, textAlign: 'center', fontSize: '12px' }}>
+                        No message trace matched “{chatSearchQuery}”.
+                      </div>
+                    )}
                     {filteredMessages.map((msg) => {
                       const isMe = msg.sender_id === currentUser.id;
                       const isChosen = selectedMessages.includes(msg.id);
@@ -2273,11 +2696,19 @@ export default function ChatRoom({ currentUser }) {
                                 </div>
                               )}
 
-                              <div style={{ padding: '12px 16px', borderRadius: isMe ? (replyParentMsg ? '0 16px 16px 16px' : '24px 24px 6px 24px') : (replyParentMsg ? '16px 0 16px 16px' : '24px 24px 24px 6px'), background: isMe ? theme.bubbleMe : theme.bubbleUser, color: isMe ? theme.textMe : theme.textUser, fontSize: '14px', lineHeight: '1.4', boxShadow: '0 2px 6px rgba(0,0,0,0.05)', position: 'relative', border: isChosen ? '2px solid #fff' : 'none' }}>
+                                              <div style={{ padding: isStickerPayload(msg.content) ? '0' : '12px 16px', borderRadius: isStickerPayload(msg.content) ? '20px' : (isMe ? (replyParentMsg ? '0 16px 16px 16px' : '24px 24px 6px 24px') : (replyParentMsg ? '16px 0 16px 16px' : '24px 24px 24px 6px')), background: isStickerPayload(msg.content) ? 'transparent' : (isMe ? theme.bubbleMe : theme.bubbleUser), color: isMe ? theme.textMe : theme.textUser, fontSize: '14px', lineHeight: '1.4', boxShadow: isStickerPayload(msg.content) ? 'none' : '0 2px 6px rgba(0,0,0,0.05)', position: 'relative', border: isChosen ? '2px solid #fff' : 'none', overflow: isStickerPayload(msg.content) ? 'hidden' : 'visible', minWidth: '140px', maxWidth: '100%' }}>
                                 {renderMessageContent(msg.content)}
                                 {msg.is_pinned && <FontAwesomeIcon icon={faThumbtack} style={{ position: 'absolute', top: '-6px', right: '-6px', fontSize: '10px', color: theme.accent, background: theme.card, padding: '3px', borderRadius: '50%' }} />}
+                                {renderMessageReactions(msg)}
                               </div>
-                              <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '2px', padding: '0 4px' }}>{replyTimeNode}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px', padding: '0 4px' }}>
+                                <span style={{ fontSize: '9px', opacity: 0.6 }}>{replyTimeNode}</span>
+                                {isMe && (
+                                  <span style={{ fontSize: '10px', color: getReadReceiptState(msg, currentUser.id, readMessageIds) === 'seen' ? '#34c759' : theme.subText }}>
+                                    {getReadReceiptState(msg, currentUser.id, readMessageIds) === 'seen' ? <FontAwesomeIcon icon={faCheckDouble} /> : <FontAwesomeIcon icon={faCheck} />}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </motion.div>
                         </div>
@@ -2287,16 +2718,17 @@ export default function ChatRoom({ currentUser }) {
                   </div>
 
                   {/* ATTACHED BOTTOM DISPATCH BAR AREA INPUT INTERFACE CONTROL */}
-                  <div style={{ position: 'absolute', bottom: '20px', left: '20px', right: '20px', background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '20px', padding: '12px', zIndex: 100, boxShadow: '0 -8px 32px rgba(0,0,0,0.05)' }}>
+                  <div style={{ position: 'absolute', bottom: '20px', left: '24px', right: '24px', maxWidth: 'calc(100% - 48px)', background: theme.card, border: `1px solid ${theme.border}`, borderRadius: '20px', padding: '12px', zIndex: 120, boxShadow: '0 -8px 32px rgba(0,0,0,0.05)' }}>
                     
                     <div style={{ position: 'relative', marginBottom: '14px' }}>
                     <form onSubmit={handleSendMessage} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '999px', padding: '10px 12px', boxShadow: '0 10px 24px rgba(0,0,0,0.06)' }}>
                       {!currentActiveRoomData?.is_bot_channel && (
-                        <button type="button" onClick={() => handleTogglePicker('emojis')} style={{ border: 'none', background: 'transparent', color: theme.accent, width: '42px', height: '42px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <button type="button" onClick={handleEmojiButtonClick} style={{ border: 'none', background: 'transparent', color: theme.accent, width: '42px', height: '42px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                           <FontAwesomeIcon icon={faFaceSmile} style={{ transform: isEmojiPickerOpen && pickerTab === 'emojis' ? 'rotate(20deg)' : 'none', transition: 'transform 160ms ease' }} />
                         </button>
                       )}
                       <input
+                        ref={inputRef}
                         type="text"
                         placeholder={currentActiveRoomData?.is_bot_channel ? 'Official Broadcast Node: Read-Only parameters locked.' : 'Transmit secure data parameters text stream...'}
                         value={newMessage}
@@ -2357,7 +2789,10 @@ export default function ChatRoom({ currentUser }) {
           <div style={{ flex: 1, overflowY: 'auto', width: '100%', height: 'calc(100% - 70px)', paddingBottom: '90px' }}>
             {!activeRoomId && currentTab === 'chats' && (
               <div style={{ padding: '16px 20px' }}>
-                <span style={{ fontSize: '24px', fontWeight: '900', display: 'block', marginBottom: '16px', color: theme.accent }}>ItalK</span>
+                <span style={{ fontSize: '24px', fontWeight: '900', display: 'block', marginBottom: '16px', color: theme.accent, display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                  <motion.span key={brandLetterIndex} initial={{ opacity: 0.2, y: 2, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.16 }} style={{ display: 'inline-block', textShadow: '0 0 12px rgba(90,200,250,0.5)', filter: 'drop-shadow(0 0 8px rgba(0,122,255,0.3))' }}>{brandLetters[brandLetterIndex]}</motion.span>
+                  <span style={{ display: 'inline-block', textShadow: '0 0 10px rgba(90,200,250,0.25)' }}>talK</span>
+                </span>
                 <div style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: theme.subText, padding: '8px 4px' }}>Accounts (Directs)</div>
                 {renderRoomListItems(personalRooms)}
                 <div style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: theme.subText, padding: '16px 4px 8px 4px' }}>Groups Channel List</div>
@@ -2496,7 +2931,12 @@ export default function ChatRoom({ currentUser }) {
                     </div>
                   )}
 
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '85px 16px 85px 16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '100px 16px 140px 16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {chatSearchQuery.trim() && filteredMessages.length === 0 && (
+                      <div style={{ padding: '12px', borderRadius: '12px', background: theme.bg, border: `1px dashed ${theme.border}`, color: theme.subText, textAlign: 'center', fontSize: '12px' }}>
+                        No message trace matched “{chatSearchQuery}”.
+                      </div>
+                    )}
                     {filteredMessages.map(msg => {
                       const isMe = msg.sender_id === currentUser.id;
                       const nestedReply = msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id) : null;
@@ -2540,10 +2980,18 @@ export default function ChatRoom({ currentUser }) {
                                   ↳ {nestedReply.content}
                                 </div>
                               )}
-                              <div style={{ padding: '10px 14px', borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: isMe ? theme.bubbleMe : theme.bubbleUser, color: isMe ? theme.textMe : theme.textUser, fontSize: '13.5px', wordBreak: 'break-word' }}>
+                              <div style={{ padding: isStickerPayload(msg.content) ? '0' : '10px 14px', borderRadius: isStickerPayload(msg.content) ? '18px' : (isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px'), background: isStickerPayload(msg.content) ? 'transparent' : (isMe ? theme.bubbleMe : theme.bubbleUser), color: isMe ? theme.textMe : theme.textUser, fontSize: '13.5px', wordBreak: 'break-word', boxShadow: isStickerPayload(msg.content) ? 'none' : 'none', overflow: isStickerPayload(msg.content) ? 'hidden' : 'visible' }}>
                                 {renderMessageContent(msg.content)}
+                                {renderMessageReactions(msg)}
                               </div>
-                              <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '2px', padding: '0 4px' }}>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px', padding: '0 4px' }}>
+                                <span style={{ fontSize: '9px', opacity: 0.6 }}>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                {isMe && (
+                                  <span style={{ fontSize: '10px', color: getReadReceiptState(msg, currentUser.id, readMessageIds) === 'seen' ? '#34c759' : theme.subText }}>
+                                    {getReadReceiptState(msg, currentUser.id, readMessageIds) === 'seen' ? <FontAwesomeIcon icon={faCheckDouble} /> : <FontAwesomeIcon icon={faCheck} />}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </motion.div>
                         </div>

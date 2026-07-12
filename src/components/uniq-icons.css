@@ -1,0 +1,12 @@
+.uniq-icon {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.uniq-icon--muted {
+  opacity: 0.6;
+}
+
+.uniq-icon--brand {
+  color: #007aff;
+}
